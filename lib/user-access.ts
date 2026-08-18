@@ -1,0 +1,229 @@
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
+
+export type MenuKey =
+  | 'dashboard'
+  | 'baseline'
+  | 'saggd'
+  | 'appoli'
+  | 'profil-petani'
+  | 'analisa-usaha'
+  | 'inspeksi-ics'
+  | 'data-lahan'
+  | 'admin-users';
+
+export type UserAccessProfile = {
+  id: string;
+  name: string;
+  email: string;
+  username?: string;
+  uid?: string;
+  role: 'admin' | 'user';
+  accessibleMenus: MenuKey[];
+};
+
+export const ADMIN_EMAIL = 'dionyyr@gmail.com';
+export const ADMIN_USERNAME = 'diony';
+export const ADMIN_UID = 'Zm6IBgsvXkO9pBRmJlKbJ3YicnA3';
+
+export const MENU_CONFIG = [
+  { key: 'dashboard', label: 'DASHBOARD', href: '/dashboard' },
+  { key: 'baseline', label: 'BASELINE', href: '/dashboard/baseline' },
+  { key: 'saggd', label: 'SAGGD', href: '/dashboard/saggd' },
+  { key: 'appoli', label: 'DASHBOARD APPOLI', href: '/dashboard/appoli' },
+  { key: 'analisa-usaha', label: 'ANALISA USAHA', href: '/dashboard/appoli/analisa-usaha' },
+  { key: 'inspeksi-ics', label: 'INSPEKSI ICS', href: '/dashboard/appoli/inspeksi-ics' },
+  { key: 'data-lahan', label: 'DATA & LAHAN', href: '/dashboard/appoli/data-lahan' },
+  { key: 'admin-users', label: 'MANAJEMEN USER', href: '/dashboard/admin/users' },
+] as const;
+
+export const DEFAULT_USERS: UserAccessProfile[] = [
+  {
+    id: 'admin-1',
+    name: ADMIN_USERNAME,
+    email: ADMIN_EMAIL,
+    username: ADMIN_USERNAME,
+    uid: ADMIN_UID,
+    role: 'admin',
+    accessibleMenus: MENU_CONFIG.map((menu) => menu.key),
+  },
+  {
+    id: 'user-1',
+    name: 'Budi Santoso',
+    email: 'budi@appoli.com',
+    role: 'user',
+    accessibleMenus: ['dashboard', 'appoli', 'profil-petani', 'analisa-usaha'],
+  },
+  {
+    id: 'user-2',
+    name: 'Siti Aminah',
+    email: 'siti@appoli.com',
+    role: 'user',
+    accessibleMenus: ['dashboard', 'baseline', 'saggd'],
+  },
+];
+
+const getDefaultAccessibleMenus = (role: 'admin' | 'user'): MenuKey[] => {
+  if (role === 'admin') {
+    return MENU_CONFIG.map((menu) => menu.key);
+  }
+
+  return ['dashboard', 'appoli', 'profil-petani'];
+};
+
+export function getStoredUsers(): UserAccessProfile[] {
+  if (typeof window === 'undefined') {
+    return DEFAULT_USERS;
+  }
+
+  try {
+    const raw = window.localStorage.getItem('agrisense-user-access');
+    if (!raw) {
+      window.localStorage.setItem('agrisense-user-access', JSON.stringify(DEFAULT_USERS));
+      return DEFAULT_USERS;
+    }
+
+    const parsed = JSON.parse(raw) as UserAccessProfile[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_USERS;
+  } catch {
+    return DEFAULT_USERS;
+  }
+}
+
+export function saveUsers(users: UserAccessProfile[]) {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('agrisense-user-access', JSON.stringify(users));
+  }
+}
+
+export function getUserProfileByEmail(email?: string | null): UserAccessProfile | undefined {
+  if (!email) return undefined;
+
+  const normalized = email.trim().toLowerCase();
+  return getStoredUsers().find((user) => user.email.trim().toLowerCase() === normalized);
+}
+
+export function normalizeRole(email?: string | null, uid?: string | null): 'admin' | 'user' {
+  const normalized = email?.trim().toLowerCase();
+
+  if (normalized === ADMIN_EMAIL.toLowerCase() || uid === ADMIN_UID) {
+    return 'admin';
+  }
+
+  return 'user';
+}
+
+export function isAdminUser(email?: string | null, uid?: string | null): boolean {
+  if (!email && !uid) return false;
+
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (normalizedEmail === ADMIN_EMAIL.toLowerCase()) return true;
+  if (uid && uid === ADMIN_UID) return true;
+
+  const profile = getUserProfileByEmail(email);
+  if (profile?.uid && profile.uid === uid) return true;
+
+  return profile?.role === 'admin';
+}
+
+export function getVisibleMenuKeys(email?: string | null, uid?: string | null): MenuKey[] {
+  if (isAdminUser(email, uid)) {
+    return MENU_CONFIG.map((menu) => menu.key);
+  }
+
+  const profile = getUserProfileByEmail(email);
+  return profile?.accessibleMenus ?? [];
+}
+
+export async function syncUserProfileToFirestore(firebaseUser: { uid: string; email?: string | null; displayName?: string | null; }) {
+  const role = normalizeRole(firebaseUser.email, firebaseUser.uid);
+  const profile: UserAccessProfile = {
+    id: firebaseUser.uid,
+    name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || ADMIN_USERNAME,
+    email: firebaseUser.email || '',
+    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || ADMIN_USERNAME,
+    uid: firebaseUser.uid,
+    role,
+    accessibleMenus: getDefaultAccessibleMenus(role),
+  };
+
+  if (!firebaseUser.uid) return profile;
+
+  const ref = doc(db, 'users', firebaseUser.uid);
+  const existingProfile = await getDoc(ref);
+  if (existingProfile.exists()) {
+    const data = existingProfile.data() as Partial<UserAccessProfile>;
+    return {
+      ...profile,
+      id: data.id ?? firebaseUser.uid,
+      name: data.name ?? data.username ?? profile.name,
+      username: data.username ?? data.name ?? profile.username,
+      role: data.role === 'admin' ? 'admin' : 'user',
+      accessibleMenus: Array.isArray(data.accessibleMenus)
+        ? data.accessibleMenus as MenuKey[]
+        : profile.accessibleMenus,
+    };
+  }
+
+  await setDoc(ref, {
+    uid: firebaseUser.uid,
+    name: profile.name,
+    email: profile.email,
+    username: profile.username,
+    role: profile.role,
+    accessibleMenus: profile.accessibleMenus,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+
+  return profile;
+}
+
+export async function getUserProfileByUid(uid?: string | null): Promise<UserAccessProfile | null> {
+  if (!uid) return null;
+
+  const ref = doc(db, 'users', uid);
+  const snapshot = await getDoc(ref);
+
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  const data = snapshot.data() as Partial<UserAccessProfile>;
+  return {
+    id: data.id ?? uid,
+    name: data.name ?? data.username ?? 'User',
+    email: data.email ?? '',
+    username: data.username ?? data.name,
+    uid: data.uid ?? uid,
+    role: (data.role === 'admin' ? 'admin' : 'user'),
+    accessibleMenus: Array.isArray(data.accessibleMenus) ? data.accessibleMenus as MenuKey[] : getDefaultAccessibleMenus('user'),
+  };
+}
+
+export async function updateUserProfileInFirestore(profile: UserAccessProfile): Promise<UserAccessProfile> {
+  if (!profile.uid) {
+    return profile;
+  }
+
+  const ref = doc(db, 'users', profile.uid);
+  await setDoc(ref, {
+    uid: profile.uid,
+    name: profile.name,
+    email: profile.email,
+    username: profile.username,
+    role: profile.role,
+    accessibleMenus: profile.accessibleMenus,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+
+  return profile;
+}
+
+export async function deleteUserProfileFromFirestore(uid: string): Promise<void> {
+  if (!uid) return;
+
+  const ref = doc(db, 'users', uid);
+  await setDoc(ref, {
+    deletedAt: new Date().toISOString(),
+  }, { merge: true });
+}

@@ -1,0 +1,29 @@
+[debug] [2026-08-18T14:50:11.039Z] ----------------------------------------------------------------------
+[debug] [2026-08-18T14:50:11.042Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\fastr\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js firestore:databases:list
+[debug] [2026-08-18T14:50:11.042Z] CLI Version:   15.27.0
+[debug] [2026-08-18T14:50:11.042Z] Platform:      win32
+[debug] [2026-08-18T14:50:11.042Z] Node Version:  v24.18.0
+[debug] [2026-08-18T14:50:11.042Z] Detected Agent: codex_cli
+[debug] [2026-08-18T14:50:11.042Z] Time:          Tue Aug 18 2026 21:50:11 GMT+0700 (Western Indonesia Time)
+[debug] [2026-08-18T14:50:11.042Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-08-18T14:50:12.360Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-08-18T14:50:12.361Z] > authorizing via signed-in user (melapi2026@gmail.com)
+[debug] [2026-08-18T14:50:12.361Z] [iam] checking project melapi-5d948 for permissions ["datastore.databases.list","firebase.projects.get"]
+[debug] [2026-08-18T14:50:12.378Z] Checked if tokens are valid: true, expires at: 1787065883641
+[debug] [2026-08-18T14:50:12.378Z] Checked if tokens are valid: true, expires at: 1787065883641
+[debug] [2026-08-18T14:50:12.379Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/melapi-5d948:testIamPermissions [none]
+[debug] [2026-08-18T14:50:12.379Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/melapi-5d948:testIamPermissions  x-goog-user-project=melapi-5d948
+[debug] [2026-08-18T14:50:12.379Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/melapi-5d948:testIamPermissions {"permissions":["datastore.databases.list","firebase.projects.get"]}
+[debug] [2026-08-18T14:50:12.851Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/melapi-5d948:testIamPermissions 200
+[debug] [2026-08-18T14:50:12.852Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/melapi-5d948:testIamPermissions {"permissions":["datastore.databases.list","firebase.projects.get"]}
+[debug] [2026-08-18T14:50:12.852Z] Checked if tokens are valid: true, expires at: 1787065883641
+[debug] [2026-08-18T14:50:12.852Z] Checked if tokens are valid: true, expires at: 1787065883641
+[debug] [2026-08-18T14:50:12.852Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/melapi-5d948/databases [none]
+[debug] [2026-08-18T14:50:13.494Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/melapi-5d948/databases 200
+[debug] [2026-08-18T14:50:13.494Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/melapi-5d948/databases {"databases":[{"name":"projects/melapi-5d948/databases/(default)","uid":"a5dbd596-badc-4f12-bf6d-314ae5c641d8","createTime":"2026-08-18T13:50:30.494804Z","updateTime":"2026-08-18T13:50:30.494804Z","locationId":"asia-southeast2","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-08-18T13:50:30.494804Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"zet","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"INq+3ru2qpYDMOnay5CuqpYD"}]}
+[info] ┌──────────────────────────────────────────────┬────────────────────┬────────────────────┐
+│ Database Name                                │ Edition            │ Type               │
+├──────────────────────────────────────────────┼────────────────────┼────────────────────┤
+│ projects/melapi-5d948/databases/(default)    │ STANDARD           │ FIRESTORE_NATIVE   │
+└──────────────────────────────────────────────┴────────────────────┴────────────────────┘
