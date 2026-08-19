@@ -26,6 +26,12 @@ body {
 }
 
 /* Print Styles */
+/* Leaflet memakai z-index tinggi untuk marker dan kontrol. Tetap batasi di bawah sidebar aplikasi. */
+.leaflet-container {
+  position: relative;
+  z-index: 0 !important;
+}
+
 @media print {
   body {
     background: white;

@@ -1,89 +1,95 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { ExternalLink, RefreshCw, Loader2, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { AlertCircle, BarChart3, Loader2, MapPinned, RefreshCw, Users } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+
+type CountItem = { label: string; value: number }
+type Summary = { count: number; mean: number; median: number; min: number; max: number }
+type ProductMetric = { commodity: string; yieldPerHa: Summary }
+type EconomyMetric = { commodity: string; cost: Summary; income: Summary; margin: Summary; roi: Summary }
+type MapPoint = { lat: number; lng: number; province: string; commodity: string; farmerName: string }
+type Dashboard = { total: number; kpis: { respondents: number; averageLandArea: number; averageYield: number; certified: number } }
+type Options = { provinces: string[]; commodities: string[] }
+type SurveyTable = { headers: string[]; rows: { id: string; cells: string[] }[]; total: number }
+type SurveyDetail = { farmerName: string; enumerator: string; fields: { label: string; value: string }[] }
+type Analytics = {
+  trends?: { month: string; responses: number }[]
+  statistics?: { landArea?: Summary; yieldKg?: Summary }
+  productivity?: ProductMetric[]; economics?: EconomyMetric[]
+  outliers?: { count?: number; lowerBound?: number; upperBound?: number }
+  quality?: { uniqueResponses?: number; duplicateResponses?: number; missingCoordinates?: number; missingIdentity?: number; coordinateCoverage?: number; certificationRate?: number; economicCoverage?: number }
+  agroecology?: { stage?: CountItem[]; organicInputs?: CountItem[]; chemicalFertilizer?: CountItem[]; chemicalPesticide?: CountItem[] }
+  market?: { salesChannels?: CountItem[]; certification?: CountItem[] }
+  monitoring?: { provinces?: CountItem[]; districts?: CountItem[]; gender?: CountItem[]; education?: CountItem[]; youth?: CountItem[]; landStatus?: CountItem[]; waterSources?: CountItem[] }
+  risks?: CountItem[]; insights?: string[]
+}
+
+const endpoint = process.env.NEXT_PUBLIC_BASELINE_APPS_SCRIPT_URL
+const number = (value: number, digits = 0) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: digits }).format(value || 0)
+const money = (value: number) => `Rp${number(value)}`
+const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[char] || char)
+
+async function api<T>(action: string, params: Record<string, string> = {}): Promise<T> {
+  if (!endpoint) throw new Error('NEXT_PUBLIC_BASELINE_APPS_SCRIPT_URL belum diatur.')
+  const query = new URLSearchParams({ action, ...params })
+  const response = await fetch(`${endpoint}${endpoint.includes('?') ? '&' : '?'}${query}`, { cache: 'no-store' })
+  const result = await response.json()
+  if (!response.ok || result.status !== 'success') throw new Error(result.message || 'Data Baseline gagal dimuat.')
+  return result.data as T
+}
 
 export default function BaselinePage() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [key, setKey] = useState(0); // Digunakan untuk reload iframe
-
-  // Masukkan URL Google Apps Script Web App Anda di sini atau via .env.local
-  const APPS_SCRIPT_URL = 
-    process.env.NEXT_PUBLIC_BASELINE_APPS_SCRIPT_URL || 
-    'https://script.google.com/macros/s/AKfycbxYOUR_SCRIPT_ID_HERE/exec';
-
-  const handleRefresh = () => {
-    setIsLoading(true);
-    setKey((prev) => prev + 1); // Memaksa iframe reload
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto space-y-6 h-[calc(100vh-140px)] flex flex-col animate-in fade-in duration-500">
-      
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">Data Baseline Petani</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <ShieldCheck className="w-3 h-3" /> Live Integration
-            </span>
-          </div>
-          <p className="text-xs text-slate-500">
-            Akses dan kelola formulir/sistem Baseline langsung dari Google Apps Script.
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleRefresh}
-            className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 rounded-xl text-xs font-semibold transition-all shadow-sm"
-            title="Reload Web App"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-
-          <a
-            href={APPS_SCRIPT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl text-xs font-semibold transition-all shadow-md shadow-emerald-600/20"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Buka Layar Penuh
-          </a>
-        </div>
-      </div>
-
-      {/* Frame Container - Premium Canvas */}
-      <div className="flex-1 bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] overflow-hidden relative">
-        
-        {/* Skeleton / Loading State */}
-        {isLoading && (
-          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-emerald-50 rounded-2xl">
-              <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-bold text-slate-700">Memuat Sistem Baseline...</p>
-              <p className="text-xs text-slate-400 mt-0.5">Menghubungkan ke Google Apps Script Server</p>
-            </div>
-          </div>
-        )}
-
-        {/* Integrated Web App iFrame */}
-        <iframe
-          key={key}
-          src={APPS_SCRIPT_URL}
-          className="w-full h-full border-0"
-          onLoad={() => setIsLoading(false)}
-          title="Baseline Google Apps Script Web App"
-          allow="geolocation; microphone; camera; clipboard-write;"
-        />
-      </div>
-
-    </div>
-  );
+  const [options, setOptions] = useState<Options>({ provinces: [], commodities: [] })
+  const [province, setProvince] = useState(''); const [commodity, setCommodity] = useState('')
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null); const [analytics, setAnalytics] = useState<Analytics | null>(null)
+  const [mapPoints, setMapPoints] = useState<MapPoint[]>([]); const [table, setTable] = useState<SurveyTable | null>(null)
+  const [detail, setDetail] = useState<SurveyDetail | null>(null); const [loading, setLoading] = useState(true); const [detailLoading, setDetailLoading] = useState(false); const [error, setError] = useState('')
+  const filters = useCallback(() => ({ province, commodity }), [province, commodity])
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const current = filters()
+      const [nextDashboard, nextAnalytics, nextMapPoints, nextTable] = await Promise.all([api<Dashboard>('dashboard', current), api<Analytics>('analytics', current), api<MapPoint[]>('map', current), api<SurveyTable>('table', { ...current, page: '0', pageSize: '20' })])
+      setDashboard(nextDashboard); setAnalytics(nextAnalytics); setMapPoints(nextMapPoints); setTable(nextTable)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Data Baseline gagal dimuat.') } finally { setLoading(false) }
+  }, [filters])
+  useEffect(() => { Promise.resolve().then(async () => { try { setOptions(await api<Options>('options')) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Filter gagal dimuat.') } }) }, [])
+  useEffect(() => { Promise.resolve().then(load) }, [load])
+  const openDetail = async (id: string) => { setDetail(null); setDetailLoading(true); try { setDetail(await api<SurveyDetail>('detail', { id })) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Detail gagal dimuat.') } finally { setDetailLoading(false) } }
+  const quality = analytics?.quality; const productivity = analytics?.productivity ?? []; const economics = analytics?.economics ?? []
+  const kpis: [string, string, string, typeof Users][] = [
+    ['Respons unik', number(dashboard?.kpis.respondents ?? 0), 'Hasil deduplikasi respons', Users],
+    ['Cakupan geotag', `${number(quality?.coordinateCoverage ?? 0, 1)}%`, `${number(quality?.missingCoordinates ?? 0)} respons tanpa GPS`, MapPinned],
+    ['Data ekonomi valid', `${number(quality?.economicCoverage ?? 0, 1)}%`, 'Biaya dan pendapatan terisi', BarChart3],
+    ['Sertifikasi aktif', `${number(quality?.certificationRate ?? 0, 1)}%`, `${number(dashboard?.kpis.certified ?? 0)} responden tersertifikasi`, BarChart3],
+  ]
+  return <main className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
+    <header className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-800 to-emerald-900 p-6 text-white shadow-xl shadow-slate-950/15 sm:flex-row sm:items-center sm:p-8"><div><p className="text-xs font-bold tracking-[.2em] text-emerald-200">SIM-API · BASELINE ANALYTICS</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Monitoring Baseline Petani</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Dasbor analitik untuk melihat cakupan, kondisi usaha tani, risiko, praktik agroekologi, dan kualitas data secara terpadu.</p></div><button type="button" onClick={load} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold backdrop-blur hover:bg-white/25 disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Perbarui data</button></header>
+    {error && <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertCircle className="h-5 w-5 shrink-0" />{error}</div>}
+    <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-end"><Filter label="Provinsi" value={province} onChange={setProvince} values={options.provinces} empty="Semua provinsi" /><Filter label="Komoditas" value={commodity} onChange={setCommodity} values={options.commodities} empty="Semua komoditas" /><button type="button" onClick={() => { setProvince(''); setCommodity('') }} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">Reset filter</button></section>
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{kpis.map(([label, value, note, Icon]) => <article key={label} className="group rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p><Icon className="h-5 w-5 text-emerald-600" /></div><strong className="mt-4 block text-3xl tracking-tight text-slate-900">{value}</strong><p className="mt-2 text-xs text-slate-500">{note}</p></article>)}</section>
+    <section className="grid gap-5 xl:grid-cols-3"><article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm xl:col-span-2"><SectionTitle title="Tren Pengisian Survei" text="Jumlah respons per bulan berdasarkan waktu pencatatan." /><div className="mt-4 h-72">{analytics?.trends?.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={analytics.trends}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip /><Line type="monotone" dataKey="responses" name="Respons" stroke="#059669" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} animationDuration={650} /></LineChart></ResponsiveContainer> : <Empty />}</div></article><article className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5"><SectionTitle title="Temuan Otomatis" text="Sorotan awal untuk monitoring program." /><div className="mt-4 space-y-3">{analytics?.insights?.length ? analytics.insights.map((item) => <p key={item} className="border-l-2 border-emerald-500 pl-3 text-sm leading-6 text-slate-600">{item}</p>) : <Empty />}</div></article></section>
+    <section className="grid gap-5 xl:grid-cols-3"><LeafletMap points={mapPoints} /><article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm"><SectionTitle title="Ringkasan Statistik" text="Gunakan median untuk mengurangi pengaruh nilai ekstrem." /><div className="mt-4 space-y-4 text-sm"><Metric label="Median luas lahan" value={`${number((analytics?.statistics?.landArea?.median ?? 0) / 10000, 2)} ha`} /><Metric label="Median hasil panen" value={`${number(analytics?.statistics?.yieldKg?.median ?? 0)} kg`} /><Metric label="Rentang luas lahan" value={`${number((analytics?.statistics?.landArea?.min ?? 0) / 10000, 2)}–${number((analytics?.statistics?.landArea?.max ?? 0) / 10000, 2)} ha`} /><Metric label="Rentang hasil panen" value={`${number(analytics?.statistics?.yieldKg?.min ?? 0)}–${number(analytics?.statistics?.yieldKg?.max ?? 0)} kg`} /></div></article></section>
+    <section className="grid gap-5 xl:grid-cols-3"><ChartCard title="Produktivitas per Komoditas" text="Rata-rata hasil panen per hektare dari respons dengan data valid."><BarChart data={productivity.map((item) => ({ komoditas: item.commodity, produktivitas: Math.round(item.yieldPerHa.mean) }))}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="komoditas" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(value) => `${number(Number(value))} kg/ha`} /><Bar dataKey="produktivitas" name="Produktivitas" fill="#059669" radius={[5, 5, 0, 0]} animationDuration={650} /></BarChart></ChartCard><ChartCard title="Biaya dan Pendapatan" text="Perbandingan rata-rata per komoditas."><BarChart data={economics.map((item) => ({ komoditas: item.commodity, biaya: item.cost.mean, pendapatan: item.income.mean }))}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="komoditas" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(value) => money(Number(value))} /><Legend /><Bar dataKey="biaya" name="Biaya" fill="#f59e0b" radius={[4, 4, 0, 0]} animationDuration={650} /><Bar dataKey="pendapatan" name="Pendapatan" fill="#2563eb" radius={[4, 4, 0, 0]} animationDuration={650} /></BarChart></ChartCard><article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm"><SectionTitle title="Kualitas & Validasi" text="Indikator untuk tindak lanjut enumerasi." /><div className="mt-4 space-y-4 text-sm"><Metric label="Respons duplikat" value={number(quality?.duplicateResponses ?? 0)} /><Metric label="Koordinat belum tersedia" value={number(quality?.missingCoordinates ?? 0)} /><Metric label="Identitas belum lengkap" value={number(quality?.missingIdentity ?? 0)} /><Metric label="Outlier produktivitas" value={number(analytics?.outliers?.count ?? 0)} /><Metric label="Batas atas outlier" value={`${number(analytics?.outliers?.upperBound ?? 0)} kg/ha`} /></div></article></section>
+    <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><SectionTitle title="Produktivitas, Margin, dan ROI" text="Ringkasan per komoditas; tinjau outlier sebelum dipakai sebagai dasar keputusan." /></div><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Komoditas</th><th className="px-5 py-3">N Produktivitas</th><th className="px-5 py-3">Rata-rata kg/ha</th><th className="px-5 py-3">N Ekonomi</th><th className="px-5 py-3">Margin</th><th className="px-5 py-3">ROI</th></tr></thead><tbody className="divide-y divide-slate-100">{productivity.map((item) => { const economy = economics.find((value) => value.commodity === item.commodity); return <tr key={item.commodity}><td className="px-5 py-3 font-bold text-slate-700">{item.commodity}</td><td className="px-5 py-3">{number(item.yieldPerHa.count)}</td><td className="px-5 py-3">{number(item.yieldPerHa.mean)}</td><td className="px-5 py-3">{number(economy?.income.count ?? 0)}</td><td className="px-5 py-3">{economy ? money(economy.margin.mean) : '—'}</td><td className="px-5 py-3">{economy ? `${number(economy.roi.mean, 1)}%` : '—'}</td></tr> })}</tbody></table></div></section>
+    <section><div className="mb-4"><h2 className="text-lg font-bold text-slate-800">Profil dan Kebutuhan Program</h2><p className="mt-1 text-sm text-slate-500">Diagram berikut membantu menentukan prioritas pendampingan, penguatan praktik, pasar, dan kelompok sasaran.</p></div><section className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><ProgramKpi title="Tahap agroekologi dominan" item={analytics?.agroecology?.stage?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Risiko prioritas" item={analytics?.risks?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Saluran pasar utama" item={analytics?.market?.salesChannels?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Sumber air utama" item={analytics?.monitoring?.waterSources?.[0]} total={dashboard?.kpis.respondents ?? 0} /></section><div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3"><Distribution title="Tahap Agroekologi" items={analytics?.agroecology?.stage} color="#059669" /><Distribution title="Input Organik" items={analytics?.agroecology?.organicInputs} color="#16a34a" /><Distribution title="Pengurangan Pupuk Kimia" items={analytics?.agroecology?.chemicalFertilizer} color="#d97706" /><Distribution title="Pengurangan Pestisida" items={analytics?.agroecology?.chemicalPesticide} color="#dc2626" /><Distribution title="Risiko Utama" items={analytics?.risks} color="#e11d48" /><Distribution title="Saluran Penjualan" items={analytics?.market?.salesChannels} color="#2563eb" /><Distribution title="Status Sertifikasi" items={analytics?.market?.certification} color="#7c3aed" /><Distribution title="Sebaran Provinsi" items={analytics?.monitoring?.provinces} color="#0f766e" /><Distribution title="Sebaran Kabupaten" items={analytics?.monitoring?.districts} color="#0891b2" /><Distribution title="Profil Gender" items={analytics?.monitoring?.gender} color="#db2777" /><Distribution title="Pendidikan Terakhir" items={analytics?.monitoring?.education} color="#4f46e5" /><Distribution title="Keterlibatan Pemuda" items={analytics?.monitoring?.youth} color="#9333ea" /><Distribution title="Kepemilikan Lahan" items={analytics?.monitoring?.landStatus} color="#b45309" /><Distribution title="Sumber Air Utama" items={analytics?.monitoring?.waterSources} color="#0284c7" /></div></section>
+    <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><SectionTitle title="Data Survei Terbaru" text={`Menampilkan hingga 20 dari ${number(table?.total ?? 0)} respons sesuai filter.`} /></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr>{(table?.headers ?? []).map((header) => <th key={header} className="px-5 py-3">{header}</th>)}<th className="px-5 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{(table?.rows ?? []).map((row) => <tr key={row.id} className="hover:bg-slate-50">{row.cells.map((cell, index) => <td key={`${row.id}-${index}`} className="max-w-48 truncate px-5 py-3 text-slate-600">{cell || '—'}</td>)}<td className="px-5 py-3 text-right"><button type="button" onClick={() => openDetail(row.id)} className="font-bold text-emerald-700 hover:text-emerald-900">Lihat</button></td></tr>)}</tbody></table></div></section>
+    {(detailLoading || detail) && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4"><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-lg font-bold text-slate-800">{detail?.farmerName || 'Memuat detail…'}</h2><p className="mt-1 text-xs text-slate-500">Petugas: {detail?.enumerator || '—'}</p></div><button type="button" onClick={() => setDetail(null)} className="text-sm font-bold text-slate-500">Tutup</button></div>{detailLoading ? <Loader2 className="mx-auto my-12 h-6 w-6 animate-spin text-emerald-600" /> : <dl className="grid gap-x-6 sm:grid-cols-2">{(detail?.fields ?? []).map((field) => <div key={field.label} className="border-b border-slate-100 py-3"><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{field.label}</dt><dd className="mt-1 text-sm text-slate-700">{field.value}</dd></div>)}</dl>}</div></div>}
+  </main>
 }
+
+function Filter({ label, value, onChange, values, empty }: { label: string; value: string; onChange: (value: string) => void; values: string[]; empty: string }) { return <label className="grid flex-1 gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case text-slate-700 outline-none focus:border-emerald-500"><option value="">{empty}</option>{values.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> }
+function SectionTitle({ title, text }: { title: string; text: string }) { return <><h2 className="font-bold text-slate-800">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{text}</p></> }
+function Metric({ label, value }: { label: string; value: string }) { return <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 last:border-0"><span className="text-slate-500">{label}</span><strong className="text-slate-800">{value}</strong></div> }
+function Empty() { return <div className="flex h-full items-center justify-center text-sm text-slate-400">Belum ada data untuk filter ini.</div> }
+function ChartCard({ title, text, children }: { title: string; text: string; children: ReactNode }) { return <article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm"><SectionTitle title={title} text={text} /><div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer></div></article> }
+function ProgramKpi({ title, item, total }: { title: string; item?: CountItem; total: number }) { const share = total && item ? (item.value / total) * 100 : 0; return <article className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</p><strong className="mt-3 block truncate text-lg text-slate-900" title={item?.label}>{item?.label || 'Belum ada data'}</strong><p className="mt-2 text-sm text-emerald-700">{number(item?.value ?? 0)} respons · {number(share, 1)}%</p></article> }
+function Distribution({ title, items, color }: { title: string; items?: CountItem[]; color: string }) { const data = (items ?? []).slice(0, 6).map((item) => ({ ...item, shortLabel: item.label.length > 24 ? `${item.label.slice(0, 24)}…` : item.label })); return <article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm"><h3 className="text-sm font-bold text-slate-800">{title}</h3><div className="mt-4 h-60">{data.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data} layout="vertical" margin={{ top: 2, right: 14, left: 4, bottom: 2 }}><CartesianGrid horizontal={false} stroke="#eef2f7" /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} /><YAxis type="category" dataKey="shortLabel" width={112} tick={{ fontSize: 10 }} /><Tooltip formatter={(value) => [number(Number(value)), 'Respons']} labelFormatter={(_, payload) => payload?.[0]?.payload?.label || ''} /><Bar dataKey="value" name="Respons" fill={color} radius={[0, 5, 5, 0]} animationDuration={650} /></BarChart></ResponsiveContainer> : <Empty />}</div></article> }
+
+type LeafletLayer = { addTo: (target: unknown) => LeafletLayer; bindPopup: (html: string) => LeafletLayer }
+type LeafletMapInstance = { setView: (center: number[], zoom: number) => LeafletMapInstance; fitBounds: (bounds: number[][], options?: object) => LeafletMapInstance; remove: () => void }
+type LeafletRuntime = { map: (node: HTMLElement, options?: object) => LeafletMapInstance; tileLayer: (url: string, options: object) => LeafletLayer; circleMarker: (point: number[], options: object) => LeafletLayer }
+function loadLeaflet(): Promise<LeafletRuntime> { return new Promise((resolve, reject) => { const current = (window as unknown as { L?: LeafletRuntime }).L; if (current) return resolve(current); if (!document.querySelector('[data-leaflet-css]')) { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; link.dataset.leafletCss = 'true'; document.head.appendChild(link) } const script = document.querySelector<HTMLScriptElement>('[data-leaflet-js]') || document.createElement('script'); script.dataset.leafletJs = 'true'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; script.onload = () => resolve((window as unknown as { L: LeafletRuntime }).L); script.onerror = () => reject(new Error('Peta tidak dapat dimuat.')); if (!script.parentNode) document.body.appendChild(script) }) }
+function LeafletMap({ points }: { points: MapPoint[] }) { const node = useRef<HTMLDivElement>(null); useEffect(() => { let map: LeafletMapInstance | undefined; let canceled = false; loadLeaflet().then((L) => { if (canceled || !node.current) return; map = L.map(node.current, { zoomControl: true }).setView([-2.5, 118], 4); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 18 }).addTo(map); const colors: Record<string, string> = { Padi: '#10b981', Kopi: '#a16207', Kakao: '#7c3f00' }; const valid = points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)); valid.forEach((point) => L.circleMarker([point.lat, point.lng], { radius: 7, color: '#ffffff', weight: 2, fillColor: colors[point.commodity] || '#2563eb', fillOpacity: .9 }).bindPopup(`<strong>${escapeHtml(point.farmerName)}</strong><br/>${escapeHtml(point.province)}<br/>${escapeHtml(point.commodity)}`).addTo(map)); if (valid.length) map.fitBounds(valid.map((point) => [point.lat, point.lng]), { padding: [28, 28], maxZoom: 11 }) }).catch(() => undefined); return () => { canceled = true; map?.remove() } }, [points]); return <article className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm xl:col-span-2"><div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><SectionTitle title="Peta Sebaran Responden" text="Peta GPS interaktif; klik marker untuk melihat nama petani, wilayah, dan komoditas." /></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{number(points.length)} titik geotag</span></div><div ref={node} className="h-[370px] w-full bg-slate-100" /><div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 p-4 text-xs text-slate-500"><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />Padi</span><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-amber-700" />Kopi</span><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-amber-900" />Kakao</span><span className="ml-auto">Sumber: koordinat GPS respons Baseline</span></div></article> }
