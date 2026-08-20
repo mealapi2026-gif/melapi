@@ -5,7 +5,7 @@ import { Trash2, UserPlus, Shield, CheckSquare, Square, Edit2, X, Loader2 } from
 import { deleteApp, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, updateProfile, type UserCredential } from 'firebase/auth';
 import { app } from '../../../../../lib/firebase';
-import { getStoredUsers, MENU_CONFIG, saveUsers, type UserAccessProfile, updateUserProfileInFirestore, deleteUserProfileFromFirestore } from '../../../../../lib/user-access';
+import { getStoredUsers, getUsersFromFirestore, MENU_CONFIG, saveUsers, type UserAccessProfile, updateUserProfileInFirestore, deleteUserProfileFromFirestore } from '../../../../../lib/user-access';
 
 const AVAILABLE_MENUS = MENU_CONFIG.map((menu) => menu.label);
 
@@ -22,13 +22,26 @@ export default function AdminUserManagement() {
   const [editEmail, setEditEmail] = useState('');
   const [editSelectedMenus, setEditSelectedMenus] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   useEffect(() => {
-    setUsers(getStoredUsers());
+    let active = true;
+    getUsersFromFirestore()
+      .then((remoteUsers) => {
+        if (!active) return;
+        setUsers(remoteUsers.length > 0 ? remoteUsers : getStoredUsers());
+        setUsersLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setUsers(getStoredUsers());
+        setUsersLoaded(true);
+      });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    saveUsers(users);
-  }, [users]);
+    if (usersLoaded) saveUsers(users);
+  }, [users, usersLoaded]);
 
   const toggleMenuAccess = (menu: string) => {
     setSelectedMenus((prev) =>

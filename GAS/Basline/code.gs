@@ -26,6 +26,7 @@ function doGet(e) {
     else if (action === 'table') data = getTable(filters, params.page, params.pageSize);
     else if (action === 'detail') data = getSurveyDetail(params.id);
     else if (action === 'map') data = getMapPoints(filters);
+    else if (action === 'photo') data = getPhotoData(params.fileId);
     else throw new Error('Parameter action tidak dikenal.');
     return jsonResponse_({ status: 'success', data: data });
   } catch (error) {
@@ -76,6 +77,8 @@ function getDashboard(filters) {
     organicInputs: countMultiBy_(rows, dataset.columns.organicInput, /^7\.3\./),
     financial: financialByCommodity_(rows, dataset.columns),
     salesChannels: countBy_(rows, dataset.columns.salesChannel),
+    cooperativeSupport: countMultiBy_(rows, dataset.columns.cooperativeSupport, /^8\.9\./),
+    governmentSupport: countMultiBy_(rows, dataset.columns.governmentSupport, /^8\.10\./),
     risks: countMultiBy_(rows, dataset.columns.risks, /^9\.2\./),
     certification: countBy_(rows, dataset.columns.certification)
   };
@@ -127,6 +130,7 @@ function getAnalytics(filters) {
       chemicalPesticide: countBy_(rows, cols.chemicalPesticide)
     },
     market: { salesChannels: countBy_(rows, cols.salesChannel), certification: countBy_(rows, cols.certification) },
+    support: { cooperative: countMultiBy_(rows, cols.cooperativeSupport, /^8\.9\./), government: countMultiBy_(rows, cols.governmentSupport, /^8\.10\./) },
     risks: countMultiBy_(rows, cols.risks, /^9\.2\./),
     monitoring: {
       provinces: countBy_(rows, cols.province), districts: countBy_(rows, cols.district),
@@ -261,7 +265,7 @@ function getSurveyDetail(id) {
   headers.forEach(function (header, index) {
     var value = record[index];
     if (value === '' || value == null || technicalHeader_(header)) return;
-    if (String(header).indexOf('Foto_Bersama_Responden') > -1) {
+    if (/foto_bersama_responden/i.test(String(header))) {
       var photoId = driveFileId_(value);
       if (photoId) photos.push({ label: prettyHeader_(header), fileId: photoId });
       return;
@@ -318,7 +322,7 @@ function resolveColumns_(headers) {
     chemicalPesticide: find(['dalam_12_bulan_t_obat_kimia_sintetis']),
     organicInput: find(['input_agroekologi_organik']),
     cost: find(['estimasi_aan_dalam_satu_musim']), income: find(['estimasi_alam_satu_masa_panen']),
-    salesChannel: find(['hasil_utama_biasanya_d']), risks: find(['apa_3_risiko']),
+    salesChannel: find(['hasil_utama_biasanya_d']), cooperativeSupport: find(['dukungan_apa_yang_paling_serin']), governmentSupport: find(['_8_10_dukungan_apa']), risks: find(['apa_3_risiko']),
     certification: find(['produk_pertanian_sa']),
     geolocation: find(['_geolocation']),
     photo: find(['_10_1_foto_bersama_responden_1'])
@@ -328,7 +332,8 @@ function resolveColumns_(headers) {
 function filterRows_(rows, cols, filters) {
   return rows.filter(function (row) {
     return (!filters.province || valueFor_(row, cols.province) === filters.province) &&
-      (!filters.commodity || commodityFor_(valueFor_(row, cols.commodity)) === filters.commodity);
+      (!filters.commodity || commodityFor_(valueFor_(row, cols.commodity)) === filters.commodity) &&
+      (!filters.district || valueFor_(row, cols.district) === filters.district);
   });
 }
 
@@ -336,7 +341,8 @@ function filterTableRows_(rows, cols, filters) {
   return rows.filter(function (row) {
     return (!filters.province || valueFor_(row, cols.province) === filters.province) &&
       (!filters.district || valueFor_(row, cols.district) === filters.district) &&
-      (!filters.enumerator || valueFor_(row, cols.enumerator) === filters.enumerator);
+      (!filters.enumerator || valueFor_(row, cols.enumerator) === filters.enumerator) &&
+      (!filters.commodity || commodityFor_(valueFor_(row, cols.commodity)) === filters.commodity);
   });
 }
 
@@ -459,8 +465,9 @@ function parseLocation_(value) {
 
 function driveFileId_(value) {
   var url = String(value || '');
-  var match = url.match(/drive\.google\.com\/file\/d\/([^/?]+)/);
-  return match ? match[1] : '';
+  var match = url.match(/drive\.google\.com\/file\/d\/([^/?]+)/i) ||
+    url.match(/[?&]id=([^&]+)/i);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 function technicalHeader_(header) {
@@ -476,7 +483,7 @@ function prettyHeader_(header) {
 function getPhotoData(fileId) {
   if (!/^[a-zA-Z0-9_-]+$/.test(String(fileId || ''))) throw new Error('ID foto tidak valid.');
   var file = DriveApp.getFileById(fileId);
-  var blob = file.getBlob();
+  var blob = file.getThumbnail() || file.getBlob();
   var type = blob.getContentType();
   if (type.indexOf('image/') !== 0) throw new Error('Dokumentasi bukan file gambar.');
   return 'data:' + type + ';base64,' + Utilities.base64Encode(blob.getBytes());

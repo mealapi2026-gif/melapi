@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 export type MenuKey =
@@ -94,6 +94,27 @@ export function saveUsers(users: UserAccessProfile[]) {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem('agrisense-user-access', JSON.stringify(users));
   }
+}
+
+export async function getUsersFromFirestore(): Promise<UserAccessProfile[]> {
+  const snapshot = await getDocs(collection(db, 'users'));
+  return snapshot.docs
+    .filter((userDoc) => !userDoc.data().deletedAt)
+    .map((userDoc) => {
+      const data = userDoc.data() as Partial<UserAccessProfile>;
+      const role = data.role === 'admin' ? 'admin' : 'user';
+      return {
+        id: data.id ?? userDoc.id,
+        name: data.name ?? data.username ?? 'User',
+        email: data.email ?? '',
+        username: data.username ?? data.name,
+        uid: data.uid ?? userDoc.id,
+        role,
+        accessibleMenus: Array.isArray(data.accessibleMenus)
+          ? data.accessibleMenus as MenuKey[]
+          : getDefaultAccessibleMenus(role),
+      };
+    });
 }
 
 export function getUserProfileByEmail(email?: string | null): UserAccessProfile | undefined {
