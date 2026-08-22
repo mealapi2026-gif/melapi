@@ -37,32 +37,6 @@ export const MENU_CONFIG = [
   { key: 'admin-users', label: 'MANAJEMEN USER', href: '/dashboard/admin/users' },
 ] as const;
 
-export const DEFAULT_USERS: UserAccessProfile[] = [
-  {
-    id: 'admin-1',
-    name: ADMIN_USERNAME,
-    email: ADMIN_EMAIL,
-    username: ADMIN_USERNAME,
-    uid: ADMIN_UID,
-    role: 'admin',
-    accessibleMenus: MENU_CONFIG.map((menu) => menu.key),
-  },
-  {
-    id: 'user-1',
-    name: 'Budi Santoso',
-    email: 'budi@appoli.com',
-    role: 'user',
-    accessibleMenus: ['dashboard', 'appoli', 'profil-petani', 'analisa-usaha'],
-  },
-  {
-    id: 'user-2',
-    name: 'Siti Aminah',
-    email: 'siti@appoli.com',
-    role: 'user',
-    accessibleMenus: ['dashboard', 'baseline', 'saggd'],
-  },
-];
-
 const getDefaultAccessibleMenus = (role: 'admin' | 'user'): MenuKey[] => {
   if (role === 'admin') {
     return MENU_CONFIG.map((menu) => menu.key);
@@ -70,31 +44,6 @@ const getDefaultAccessibleMenus = (role: 'admin' | 'user'): MenuKey[] => {
 
   return ['dashboard', 'appoli', 'profil-petani'];
 };
-
-export function getStoredUsers(): UserAccessProfile[] {
-  if (typeof window === 'undefined') {
-    return DEFAULT_USERS;
-  }
-
-  try {
-    const raw = window.localStorage.getItem('agrisense-user-access');
-    if (!raw) {
-      window.localStorage.setItem('agrisense-user-access', JSON.stringify(DEFAULT_USERS));
-      return DEFAULT_USERS;
-    }
-
-    const parsed = JSON.parse(raw) as UserAccessProfile[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_USERS;
-  } catch {
-    return DEFAULT_USERS;
-  }
-}
-
-export function saveUsers(users: UserAccessProfile[]) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem('agrisense-user-access', JSON.stringify(users));
-  }
-}
 
 export async function getUsersFromFirestore(): Promise<UserAccessProfile[]> {
   const snapshot = await getDocs(collection(db, 'users'));
@@ -118,10 +67,8 @@ export async function getUsersFromFirestore(): Promise<UserAccessProfile[]> {
 }
 
 export function getUserProfileByEmail(email?: string | null): UserAccessProfile | undefined {
-  if (!email) return undefined;
-
-  const normalized = email.trim().toLowerCase();
-  return getStoredUsers().find((user) => user.email.trim().toLowerCase() === normalized);
+  void email;
+  return undefined;
 }
 
 export function normalizeRole(email?: string | null, uid?: string | null): 'admin' | 'user' {

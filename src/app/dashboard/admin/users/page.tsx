@@ -5,7 +5,7 @@ import { Trash2, UserPlus, Shield, CheckSquare, Square, Edit2, X, Loader2 } from
 import { deleteApp, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, updateProfile, type UserCredential } from 'firebase/auth';
 import { app } from '../../../../../lib/firebase';
-import { getStoredUsers, getUsersFromFirestore, MENU_CONFIG, saveUsers, type UserAccessProfile, updateUserProfileInFirestore, deleteUserProfileFromFirestore } from '../../../../../lib/user-access';
+import { getUsersFromFirestore, MENU_CONFIG, type UserAccessProfile, updateUserProfileInFirestore, deleteUserProfileFromFirestore } from '../../../../../lib/user-access';
 
 const AVAILABLE_MENUS = MENU_CONFIG.map((menu) => menu.label);
 
@@ -28,20 +28,16 @@ export default function AdminUserManagement() {
     getUsersFromFirestore()
       .then((remoteUsers) => {
         if (!active) return;
-        setUsers(remoteUsers.length > 0 ? remoteUsers : getStoredUsers());
+        setUsers(remoteUsers);
         setUsersLoaded(true);
       })
       .catch(() => {
         if (!active) return;
-        setUsers(getStoredUsers());
+        setUsers([]);
         setUsersLoaded(true);
       });
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    if (usersLoaded) saveUsers(users);
-  }, [users, usersLoaded]);
 
   const toggleMenuAccess = (menu: string) => {
     setSelectedMenus((prev) =>
@@ -107,7 +103,7 @@ export default function AdminUserManagement() {
       // Step 4: Sync to Firestore BEFORE clearing form
       await updateUserProfileInFirestore(newUser);
 
-      // Step 5: Save to local state and localStorage
+      // Update the visible list after the Firestore write succeeds.
       setUsers((prev) => [...prev, newUser]);
 
       // Step 6: Clear form
