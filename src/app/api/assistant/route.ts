@@ -44,7 +44,9 @@ export async function POST(request: Request) {
     }
 
     if (!GEMINI_API_KEY) {
-      const fallback = `Saya tidak terhubung ke model LLM saat ini, tetapi berdasarkan data dashboard yang aktif:
+      const fallback = `AI belum terhubung di deployment ini karena GEMINI_API_KEY belum dikonfigurasi di Vercel. Tambahkan variable tersebut pada Project Settings > Environment Variables, lalu lakukan redeploy.
+
+    Berdasarkan data dashboard yang aktif:
 - responden: ${Number(payload.dashboard?.respondents ?? 0)}
 - cakupan geotag: ${Number(payload.analytics?.coordinateCoverage ?? 0).toFixed(1)}%
 - data ekonomi valid: ${Number(payload.analytics?.economicCoverage ?? 0).toFixed(1)}%
