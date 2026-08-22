@@ -131,6 +131,7 @@ function getAnalytics(filters) {
     },
     market: { salesChannels: countBy_(rows, cols.salesChannel), certification: countBy_(rows, cols.certification) },
     support: { cooperative: countMultiBy_(rows, cols.cooperativeSupport, /^8\.9\./), government: countMultiBy_(rows, cols.governmentSupport, /^8\.10\./) },
+    financialLiteracy: financialLiteracy_(rows, cols),
     risks: countMultiBy_(rows, cols.risks, /^9\.2\./),
     monitoring: {
       provinces: countBy_(rows, cols.province), districts: countBy_(rows, cols.district),
@@ -195,6 +196,26 @@ function productivityOutliers_(rows, cols) {
   var q1 = percentile_(values, 0.25), q3 = percentile_(values, 0.75), iqr = q3 - q1;
   var lower = q1 - 1.5 * iqr, upper = q3 + 1.5 * iqr;
   return { count: values.filter(function (value) { return value < lower || value > upper; }).length, lowerBound: lower, upperBound: upper };
+}
+
+// Indikator literasi keuangan berbasis praktik yang tersedia pada form,
+// bukan pengganti asesmen literasi keuangan formal.
+function financialLiteracy_(rows, cols) {
+  var levels = { 'Perlu penguatan': 0, 'Dasar': 0, 'Menengah': 0, 'Lanjut': 0 };
+  rows.forEach(function (row) {
+    var habit = String(valueFor_(row, cols.savingHabit) || '');
+    var location = String(valueFor_(row, cols.savingLocation) || '');
+    if (!/\bya\b/i.test(habit)) { levels['Perlu penguatan']++; return; }
+    if (/bank/i.test(location)) { levels['Lanjut']++; return; }
+    if (/koperasi/i.test(location)) { levels['Menengah']++; return; }
+    levels['Dasar']++;
+  });
+  return {
+    levels: Object.keys(levels).map(function (label) { return { label: label, value: levels[label] }; }),
+    savingHabits: countBy_(rows, cols.savingHabit),
+    savingLocations: countMultiBy_(rows, cols.savingLocation, /^8\.11\.1\./),
+    capitalSources: countBy_(rows, cols.capitalSource)
+  };
 }
 
 function percentile_(values, percentile) {
@@ -323,6 +344,7 @@ function resolveColumns_(headers) {
     organicInput: find(['input_agroekologi_organik']),
     cost: find(['estimasi_aan_dalam_satu_musim']), income: find(['estimasi_alam_satu_masa_panen']),
     salesChannel: find(['hasil_utama_biasanya_d']), cooperativeSupport: find(['dukungan_apa_yang_paling_serin']), governmentSupport: find(['_8_10_dukungan_apa']), risks: find(['apa_3_risiko']),
+    savingHabit: find(['apakah_ada_kebiasaan_menabung']), savingLocation: find(['_8_11_1_dimana_anda_menabung']), capitalSource: find(['_8_12_dari_mana_modal_usaha']),
     certification: find(['produk_pertanian_sa']),
     geolocation: find(['_geolocation']),
     photo: find(['_10_1_foto_bersama_responden_1'])

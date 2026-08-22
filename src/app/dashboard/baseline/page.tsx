@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertCircle, BarChart3, Download, Loader2, MapPinned, RefreshCw, Users } from 'lucide-react'
+import { AlertCircle, BarChart3, Download, Loader2, MapPinned, RefreshCw, Sparkles, Users } from 'lucide-react'
 import { toJpeg, toPng, toSvg } from 'html-to-image'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -25,7 +25,7 @@ type Analytics = {
   market?: { salesChannels?: CountItem[]; certification?: CountItem[] }
   support?: { cooperative?: CountItem[]; government?: CountItem[] }
   financialLiteracy?: { levels?: CountItem[]; savingHabits?: CountItem[]; savingLocations?: CountItem[]; capitalSources?: CountItem[] }
-  monitoring?: { provinces?: CountItem[]; districts?: CountItem[]; gender?: CountItem[]; education?: CountItem[]; youth?: CountItem[]; landStatus?: CountItem[]; waterSources?: CountItem[] }
+  monitoring?: { provinces?: CountItem[]; districts?: CountItem[]; commodities?: CountItem[]; gender?: CountItem[]; education?: CountItem[]; youth?: CountItem[]; landStatus?: CountItem[]; waterSources?: CountItem[] }
   risks?: CountItem[]; insights?: string[]
 }
 
@@ -49,6 +49,12 @@ export default function BaselinePage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null); const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [mapPoints, setMapPoints] = useState<MapPoint[]>([]); const [table, setTable] = useState<SurveyTable | null>(null)
   const [detail, setDetail] = useState<SurveyDetail | null>(null); const [loading, setLoading] = useState(true); const [detailLoading, setDetailLoading] = useState(false); const [error, setError] = useState('')
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantMessages, setAssistantMessages] = useState<{ id: string; role: 'user' | 'assistant'; content: string }[]>([
+    { id: 'welcome', role: 'assistant', content: 'Saya siap membantu meringkas data dashboard. Coba tanya soal jumlah responden, komoditas utama, anomali data, atau prioritas program.' }
+  ])
+  const [assistantInput, setAssistantInput] = useState('')
+  const [assistantLoading, setAssistantLoading] = useState(false)
   const filters = useCallback(() => ({ province, district, commodity }), [province, district, commodity])
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -62,6 +68,47 @@ export default function BaselinePage() {
   useEffect(() => { Promise.resolve().then(load) }, [load])
   const openDetail = async (id: string) => { setDetail(null); setDetailLoading(true); try { setDetail(await api<SurveyDetail>('detail', { id })) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Detail gagal dimuat.') } finally { setDetailLoading(false) } }
   const quality = analytics?.quality; const productivity = analytics?.productivity ?? []; const economics = analytics?.economics ?? []
+  const askAssistant = useCallback(async (question: string) => {
+    const clean = question.trim(); if (!clean || assistantLoading) return
+    setAssistantMessages((messages) => [...messages, { id: `user-${Date.now()}`, role: 'user', content: clean }])
+    setAssistantInput('')
+    setAssistantLoading(true)
+    const payload = {
+      question: clean,
+      filters: { province: province || '', district: district || '', commodity: commodity || '' },
+      dashboard: {
+        respondents: dashboard?.kpis.respondents ?? 0,
+        certified: dashboard?.kpis.certified ?? 0,
+        averageLandArea: dashboard?.kpis.averageLandArea ?? 0,
+        averageYield: dashboard?.kpis.averageYield ?? 0,
+      },
+      analytics: {
+        coordinateCoverage: quality?.coordinateCoverage ?? 0,
+        economicCoverage: quality?.economicCoverage ?? 0,
+        certificationRate: quality?.certificationRate ?? 0,
+        missingCoordinates: quality?.missingCoordinates ?? 0,
+        missingIdentity: quality?.missingIdentity ?? 0,
+        topCommodity: analytics?.monitoring?.commodities?.[0],
+        topRisk: analytics?.risks?.[0],
+        topProvince: analytics?.monitoring?.provinces?.[0],
+        topDistrict: analytics?.monitoring?.districts?.[0],
+      }
+    }
+    try {
+      const response = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const result = await response.json() as { answer?: string; error?: string }
+      const answer = result.answer || result.error || 'Gemini belum mengirim jawaban. Silakan coba lagi.'
+      setAssistantMessages((messages) => [...messages, { id: `assistant-${Date.now() + 1}`, role: 'assistant', content: answer }])
+    } catch {
+      setAssistantMessages((messages) => [...messages, { id: `assistant-${Date.now() + 2}`, role: 'assistant', content: 'Saya mengalami gangguan saat mengambil jawaban. Silakan coba lagi.' }])
+    } finally {
+      setAssistantLoading(false)
+    }
+  }, [analytics, assistantLoading, commodity, dashboard, district, province, quality])
   const kpis: [string, string, string, typeof Users][] = [
     ['Respons unik', number(dashboard?.kpis.respondents ?? 0), 'Hasil deduplikasi respons', Users],
     ['Cakupan geotag', `${number(quality?.coordinateCoverage ?? 0, 1)}%`, `${number(quality?.missingCoordinates ?? 0)} respons tanpa GPS`, MapPinned],
@@ -80,10 +127,32 @@ export default function BaselinePage() {
     <section><div className="mb-4"><h2 className="text-lg font-bold text-slate-800">Profil dan Kebutuhan Program</h2><p className="mt-1 text-sm text-slate-500">Diagram berikut membantu menentukan prioritas pendampingan, penguatan praktik, pasar, dan kelompok sasaran.</p></div><section className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><ProgramKpi title="Tahap agroekologi dominan" item={analytics?.agroecology?.stage?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Risiko prioritas" item={analytics?.risks?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Dukungan koperasi utama" item={analytics?.support?.cooperative?.[0]} total={dashboard?.kpis.respondents ?? 0} /><ProgramKpi title="Dukungan pemerintah utama" item={analytics?.support?.government?.[0]} total={dashboard?.kpis.respondents ?? 0} /></section><div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3"><Distribution title="Tahap Agroekologi" items={analytics?.agroecology?.stage} chart="donut" /><Distribution title="Tingkat Literasi Keuangan" items={analytics?.financialLiteracy?.levels} chart="donut" subtitle="Indikator dari kebiasaan dan tempat menabung; bukan asesmen formal." /><Distribution title="Kebiasaan Menabung" items={analytics?.financialLiteracy?.savingHabits} chart="donut" /><Distribution title="Tempat Menabung" items={analytics?.financialLiteracy?.savingLocations} /><Distribution title="Sumber Modal Usaha" items={analytics?.financialLiteracy?.capitalSources} chart="donut" /><Distribution title="Dukungan Koperasi" items={analytics?.support?.cooperative} /><Distribution title="Dukungan Pemerintah" items={analytics?.support?.government} /><Distribution title="Input Organik" items={analytics?.agroecology?.organicInputs} /><Distribution title="Pengurangan Pupuk Kimia" items={analytics?.agroecology?.chemicalFertilizer} /><Distribution title="Pengurangan Pestisida" items={analytics?.agroecology?.chemicalPesticide} /><Distribution title="Risiko Utama" items={analytics?.risks} /><Distribution title="Saluran Penjualan" items={analytics?.market?.salesChannels} /><Distribution title="Status Sertifikasi" items={analytics?.market?.certification} chart="donut" /><Distribution title="Sebaran Provinsi" items={analytics?.monitoring?.provinces} /><Distribution title="Sebaran Kabupaten" items={analytics?.monitoring?.districts} /><Distribution title="Profil Gender" items={analytics?.monitoring?.gender} chart="donut" /><Distribution title="Pendidikan Terakhir" items={analytics?.monitoring?.education} /><Distribution title="Keterlibatan Pemuda" items={analytics?.monitoring?.youth} chart="donut" /><Distribution title="Kepemilikan Lahan" items={analytics?.monitoring?.landStatus} /><Distribution title="Sumber Air Utama" items={analytics?.monitoring?.waterSources} /></div></section>
     <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><SectionTitle title="Data Survei Terbaru" text={`Menampilkan ${number((table?.rows ?? []).length)} dari ${number(table?.total ?? 0)} respons sesuai filter.`} /></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr>{(table?.headers ?? []).map((header) => <th key={header} className="px-5 py-3">{header}</th>)}<th className="px-5 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{(table?.rows ?? []).map((row) => <tr key={row.id} className="hover:bg-slate-50">{row.cells.map((cell, index) => <td key={`${row.id}-${index}`} className="max-w-48 truncate px-5 py-3 text-slate-600">{cell || '—'}</td>)}<td className="px-5 py-3 text-right"><button type="button" onClick={() => openDetail(row.id)} className="font-bold text-emerald-700 hover:text-emerald-900">Lihat</button></td></tr>)}</tbody></table></div><div className="flex items-center justify-between gap-4 border-t border-slate-100 p-4"><button type="button" disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40">← Sebelumnya</button><span className="text-sm text-slate-500">Halaman {page + 1} dari {Math.max(1, Math.ceil((table?.total ?? 0) / 20))}</span><button type="button" disabled={loading || (page + 1) * 20 >= (table?.total ?? 0)} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40">Berikutnya →</button></div></section>
     {(detailLoading || detail) && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4"><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-lg font-bold text-slate-800">{detail?.farmerName || 'Memuat detail…'}</h2><p className="mt-1 text-xs text-slate-500">Petugas: {detail?.enumerator || '—'}</p></div><button type="button" onClick={() => setDetail(null)} className="text-sm font-bold text-slate-500">Tutup</button></div>{detailLoading ? <Loader2 className="mx-auto my-12 h-6 w-6 animate-spin text-emerald-600" /> : <><dl className="grid gap-x-6 sm:grid-cols-2">{(detail?.fields ?? []).map((field) => <div key={field.label} className="border-b border-slate-100 py-3"><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{field.label}</dt><dd className="mt-1 text-sm text-slate-700">{field.value}</dd></div>)}</dl><DetailPhotos photos={detail?.photos ?? []} /></>}</div></div>}
+    <div className="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
+      <button type="button" onClick={() => setAssistantOpen((value) => !value)} aria-expanded={assistantOpen} className="group mb-3 ml-auto flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl shadow-slate-950/25 transition hover:-translate-y-0.5 hover:bg-emerald-700"><span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-400/20"><Sparkles className="h-3.5 w-3.5 text-emerald-300 transition group-hover:rotate-12" /></span>{assistantOpen ? 'Tutup AI' : 'Buka AI'}</button>
+      {assistantOpen && <div className="w-[calc(100vw-2rem)] max-w-[390px] overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20 ring-1 ring-black/5"><div className="relative overflow-hidden bg-slate-950 px-5 py-4 text-white"><div className="absolute inset-0 bg-gradient-to-br from-emerald-500/25 via-transparent to-cyan-400/10" /><div className="relative flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-400/15 ring-1 ring-emerald-300/30"><Sparkles className="h-5 w-5 text-emerald-300" /></div><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-emerald-300">AI Assistant</p><h3 className="mt-0.5 text-base font-bold">Dashboard Insight</h3></div></div><span className="flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-slate-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_theme(colors.emerald.400)]" />Online</span></div></div><div className="max-h-[380px] min-h-[180px] space-y-3 overflow-y-auto bg-slate-50/70 p-4">
+        {assistantMessages.map((message) => <div key={message.id} className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 shadow-sm ${message.role === 'assistant' ? 'rounded-tl-md border border-slate-200/80 bg-white text-slate-700' : 'ml-auto rounded-tr-md bg-emerald-600 text-white shadow-emerald-600/10'}`}><AssistantAnswer content={message.content} /></div>)}
+        {assistantLoading && <div className="flex max-w-[88%] items-center gap-2 rounded-2xl rounded-tl-md border border-slate-200/80 bg-white px-3.5 py-3 text-xs font-medium text-slate-500 shadow-sm"><span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-50"><Sparkles className="h-3 w-3 text-emerald-600" /></span><span>AI sedang menyusun jawaban</span><span className="flex gap-1" aria-label="AI sedang memproses"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:-.3s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:-.15s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500" /></span></div>}
+      </div><div className="border-t border-slate-200/80 bg-white p-3.5"><div className="mb-3 flex flex-wrap gap-1.5">{['Ringkas data', 'Cek anomali', 'Rekomendasi'].map((item) => <button key={item} type="button" disabled={assistantLoading} onClick={() => void askAssistant(item)} className="rounded-full border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{item}</button>)}</div><div className="flex gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5 transition-within:border-emerald-400"><input value={assistantInput} disabled={assistantLoading} onChange={(event) => setAssistantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void askAssistant(assistantInput) }} placeholder={assistantLoading ? 'Menunggu jawaban AI...' : 'Tanya data dashboard...'} className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm text-slate-700 outline-none placeholder:text-slate-400 disabled:cursor-wait" /><button type="button" disabled={assistantLoading || !assistantInput.trim()} onClick={() => void askAssistant(assistantInput)} aria-label="Kirim pertanyaan" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-600 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"><span className="text-base leading-none">↑</span></button></div></div></div>}
+    </div>
   </main>
 }
 
 function Filter({ label, value, onChange, values, empty }: { label: string; value: string; onChange: (value: string) => void; values: string[]; empty: string }) { return <label className="grid flex-1 gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case text-slate-700 outline-none focus:border-emerald-500"><option value="">{empty}</option>{values.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> }
+function renderAssistantInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith('**') && part.endsWith('**') ? <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong> : part)
+}
+function AssistantAnswer({ content }: { content: string }) {
+  const normalized = content
+    .replace(/\s*\*\*(Ringkasan|Fakta utama|Rekomendasi)\*\*\s*/gi, '\n\n**$1**\n')
+    .replace(/\s+-\s+/g, '\n- ')
+  return <div className="space-y-2">{normalized.split('\n').map((line, index) => {
+    const trimmed = line.trim()
+    if (!trimmed) return <div key={`space-${index}`} className="h-1" />
+    if (/^\*\*(Ringkasan|Fakta utama|Rekomendasi)\*\*$/i.test(trimmed)) return <h4 key={index} className="pt-1 text-xs font-bold uppercase tracking-wide text-emerald-700">{renderAssistantInline(trimmed)}</h4>
+    if (trimmed.startsWith('- ')) return <div key={index} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" /><p>{renderAssistantInline(trimmed.slice(2))}</p></div>
+    return <p key={index}>{renderAssistantInline(trimmed)}</p>
+  })}</div>
+}
 function SectionTitle({ title, text }: { title: string; text: string }) { return <><h2 className="font-bold text-slate-800">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{text}</p></> }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 last:border-0"><span className="text-slate-500">{label}</span><strong className="text-slate-800">{value}</strong></div> }
 function Empty() { return <div className="flex h-full items-center justify-center text-sm text-slate-400">Belum ada data untuk filter ini.</div> }
