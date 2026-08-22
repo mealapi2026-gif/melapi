@@ -166,7 +166,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <nav className="flex-1 px-5 py-6 space-y-2 overflow-y-auto">
           <p className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Menu Utama</p>
 
-          {MENU_CONFIG.filter((menu) => visibleMenus.includes(menu.key) || menu.key === 'admin-users' ? canManageUsers : visibleMenus.includes(menu.key)).map((menu) => {
+          {MENU_CONFIG.filter((menu) => visibleMenus.includes(menu.key) || (menu.key === 'admin-users' && canManageUsers)).map((menu) => {
             const Icon = menuMap[menu.key].icon;
             const targetPath = menuMap[menu.key].href;
 

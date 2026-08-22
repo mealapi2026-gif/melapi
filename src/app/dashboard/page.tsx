@@ -1,164 +1,73 @@
-'use client';
+ 'use client';
 
-import { useEffect, useState } from 'react';
-import { Users, DollarSign, Activity, Building2, Loader2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { Activity, ArrowRight, BarChart3, CheckCircle2, ClipboardCheck, FileText, Leaf, Loader2, MapPinned, Users } from 'lucide-react';
+import { db } from '../../../lib/firebase';
+
+type FirestoreRecord = { id: string; namaPetani?: string; namaPetugas?: string; inspektur?: string; createdAt?: unknown; tanggal?: string; keputusan?: string };
+type SaggdData = { kpi?: { totalKegiatan?: number; totalPeserta?: number; totalPembiayaan?: number; totalOrganisasi?: number }; table?: Array<{ jenisKegiatan?: string; organisasi?: string; lokasi?: string; tanggal?: string; totalPembiayaanItem?: number }> };
+type BaselineData = { kpis?: { respondents?: number; certified?: number; averageLandArea?: number } };
+
+const formatNumber = (value: number) => value.toLocaleString('id-ID');
+const formatMoney = (value: number) => `Rp ${value.toLocaleString('id-ID')}`;
+const recordTime = (value: unknown) => {
+	if (value && typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') return value.toMillis();
+	const parsed = new Date(String(value || '')).getTime();
+	return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function DashboardOverview() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+	const [farmers, setFarmers] = useState<FirestoreRecord[]>([]);
+	const [analyses, setAnalyses] = useState<FirestoreRecord[]>([]);
+	const [inspections, setInspections] = useState<FirestoreRecord[]>([]);
+	const [landSurveys, setLandSurveys] = useState<FirestoreRecord[]>([]);
+	const [saggd, setSaggd] = useState<SaggdData | null>(null);
+	const [baseline, setBaseline] = useState<BaselineData | null>(null);
+	const [loading, setLoading] = useState(true);
+	const saggdUrl = process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || '';
+	const baselineUrl = process.env.NEXT_PUBLIC_BASELINE_APPS_SCRIPT_URL || '';
 
-  const SAGGD_URL = process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || '';
+	useEffect(() => {
+		const collections = [
+			['petani', setFarmers],
+			['analisaUsaha', setAnalyses],
+			['inspeksiICS', setInspections],
+			['dataLahan', setLandSurveys],
+		] as const;
+		const unsubscribers = collections.map(([name, setter]) => onSnapshot(collection(db, name), (snapshot) => setter(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as FirestoreRecord[]), (error) => console.error(`Gagal memuat ${name}:`, error)));
+		setLoading(false);
+		return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+	}, []);
 
-  useEffect(() => {
-    async function fetchOverviewData() {
-      if (!SAGGD_URL) return;
-      try {
-        const res = await fetch(SAGGD_URL);
-        const json = await res.json();
-        if (json.status === 'success') {
-          setData(json.data);
-        }
-      } catch (err) {
-        console.error('Gagal memuat data Overview:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchOverviewData();
-  }, [SAGGD_URL]);
+	useEffect(() => {
+		const loadRemote = async () => {
+			const requests = await Promise.allSettled([saggdUrl ? fetch(saggdUrl).then((response) => response.json()) : Promise.reject(new Error('SAGGD URL kosong')), baselineUrl ? fetch(baselineUrl).then((response) => response.json()) : Promise.reject(new Error('Baseline URL kosong'))]);
+			if (requests[0].status === 'fulfilled' && requests[0].value?.status === 'success') setSaggd(requests[0].value.data as SaggdData);
+			if (requests[1].status === 'fulfilled') setBaseline(requests[1].value?.data as BaselineData);
+		};
+		void loadRemote();
+	}, [baselineUrl, saggdUrl]);
 
-  const formatIDR = (val: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      maximumFractionDigits: 0
-    }).format(val);
-  };
+	const latestActivity = useMemo(() => [...inspections.map((item) => ({ ...item, label: 'Inspeksi ICS', detail: item.inspektur || 'Petugas Lapang ICS' })), ...analyses.map((item) => ({ ...item, label: 'Analisa Usaha', detail: item.namaPetugas || 'Petugas belum dicatat' })), ...landSurveys.map((item) => ({ ...item, label: 'Data & Lahan', detail: item.namaPetugas || 'Petugas belum dicatat' }))].sort((a, b) => recordTime(b.createdAt) - recordTime(a.createdAt)).slice(0, 6), [analyses, inspections, landSurveys]);
+	const cards = [
+		{ label: 'Petani terdaftar', value: farmers.length, icon: Users, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+		{ label: 'Inspeksi ICS', value: inspections.length, icon: ClipboardCheck, color: 'text-amber-700', bg: 'bg-amber-50' },
+		{ label: 'Analisa Usaha', value: analyses.length, icon: BarChart3, color: 'text-blue-700', bg: 'bg-blue-50' },
+		{ label: 'Data & Lahan', value: landSurveys.length, icon: MapPinned, color: 'text-sky-700', bg: 'bg-sky-50' },
+	];
+	const quickLinks = [
+		['/dashboard/appoli', 'Dashboard Appoli', 'Kelola petani, lahan, dan seluruh dokumen', Leaf],
+		['/dashboard/baseline', 'Baseline', 'Pantau responden dan status sertifikasi', FileText],
+		['/dashboard/saggd', 'SAGGD', 'Analisis kegiatan dan pembiayaan', Activity],
+	] as const;
 
-  // Siapkan data 5 kegiatan terbaru untuk Grafik
-  const chartData = data?.table.slice(0, 5).map((item: any) => ({
-    name: item.jenisKegiatan.length > 15 ? item.jenisKegiatan.substring(0, 15) + '...' : item.jenisKegiatan,
-    biaya: item.totalPembiayaanItem,
-    fullName: item.jenisKegiatan
-  })) || [];
-
-  return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-10">
-      
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Kegiatan</p>
-          <div className="flex justify-between items-center">
-            <h3 className="text-3xl font-black text-slate-800 tracking-tight">
-              {loading ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : data?.kpi.totalKegiatan || 0}
-            </h3>
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl"><Activity className="w-6 h-6" /></div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Peserta</p>
-          <div className="flex justify-between items-center">
-            <h3 className="text-3xl font-black text-slate-800 tracking-tight">
-              {loading ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : data?.kpi.totalPeserta || 0}
-            </h3>
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users className="w-6 h-6" /></div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Pembiayaan</p>
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-black text-slate-800 tracking-tight">
-              {loading ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : formatIDR(data?.kpi.totalPembiayaan || 0)}
-            </h3>
-            <div className="p-3 bg-teal-50 text-teal-600 rounded-xl"><DollarSign className="w-6 h-6" /></div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Mitra Aktif</p>
-          <div className="flex justify-between items-center">
-            <h3 className="text-3xl font-black text-slate-800 tracking-tight">
-              {loading ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : data?.kpi.totalOrganisasi || 0}
-            </h3>
-            <div className="p-3 bg-orange-50 text-orange-600 rounded-xl"><Building2 className="w-6 h-6" /></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Grafik & Tabel Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Chart Area */}
-        <div className="bg-white p-6 lg:p-8 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] flex flex-col h-[450px]">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Serapan Dana (5 Kegiatan Terbaru)</h3>
-          <div className="flex-1 w-full">
-            {loading ? (
-              <div className="h-full flex items-center justify-center text-slate-400">
-                <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-              </div>
-            ) : chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={10} />
-                  <YAxis tickFormatter={(value) => `Rp${(value/1000000).toFixed(0)}M`} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                 <Tooltip 
-  cursor={{ fill: '#f8fafc' }}
-  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-  formatter={(value: any) => [
-    typeof value === 'number' ? formatIDR(value) : value, 
-    "Total Biaya"
-  ]}
-/>
-                  <Bar dataKey="biaya" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                    {chartData.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#059669' : '#34d399'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm">Tidak ada data.</div>
-            )}
-          </div>
-        </div>
-
-        {/* List Kegiatan Terbaru */}
-        <div className="bg-white p-6 lg:p-8 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] flex flex-col h-[450px]">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Aktivitas Terkini</h3>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-            {loading ? (
-              <div className="py-8 text-center text-slate-400 flex flex-col items-center">
-                <Loader2 className="w-6 h-6 animate-spin mb-2 text-emerald-600" />
-                <span className="text-sm">Menyelaraskan data...</span>
-              </div>
-            ) : (
-              data?.table.slice(0, 6).map((item: any, idx: number) => (
-                <div key={idx} className="flex items-start justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl border border-slate-100">
-                  <div className="flex-1 min-w-0 pr-4">
-                    <p className="font-bold text-slate-800 text-sm truncate">{item.jenisKegiatan}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="px-2 py-0.5 bg-white text-slate-600 rounded text-[10px] border border-slate-200 font-semibold truncate max-w-[120px]">
-                        {item.organisasi}
-                      </span>
-                      <span className="text-xs text-slate-400 truncate">{item.lokasi}</span>
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <span className="block text-xs font-semibold text-slate-400 mb-1">{item.tanggal}</span>
-                    <span className="block text-xs font-bold text-emerald-600">{item.peserta.pemudaLaki ? 'Ada Peserta' : 'Valid'}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
+	return <main className="mx-auto max-w-7xl space-y-8 pb-10"><section className="relative overflow-hidden rounded-2xl bg-slate-950 p-7 text-white shadow-xl sm:p-10"><div className="relative z-10 max-w-2xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-emerald-400">SIM-API / Pusat Monitoring</p><h1 className="text-3xl font-black tracking-tight sm:text-4xl">Selamat datang di ruang kerja data petani.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">Pantau data lapangan, dokumen sertifikasi, kegiatan, dan tindak lanjut dalam satu tempat.</p></div><div className="absolute -right-16 -top-24 h-72 w-72 rounded-full border-[36px] border-emerald-500/20" /><div className="absolute bottom-[-100px] right-32 h-56 w-56 rounded-full border-[24px] border-sky-400/10" /></section>
+		<section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">{cards.map(({ label, value, icon: Icon, color, bg }) => <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-3xl font-black text-slate-900">{loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-400" /> : formatNumber(value)}</p></div><div className={`rounded-xl p-3 ${bg} ${color}`}><Icon className="h-6 w-6" /></div></div>)}</section>
+		<section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]"><div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 p-5"><div><h2 className="text-lg font-bold text-slate-900">Aktivitas terbaru</h2><p className="mt-1 text-xs text-slate-500">Perubahan terakhir dari formulir Appoli</p></div><Link href="/dashboard/appoli" className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700">Buka data <ArrowRight className="h-4 w-4" /></Link></div><div className="divide-y divide-slate-100">{latestActivity.length === 0 ? <p className="p-6 text-sm text-slate-500">Belum ada aktivitas tersimpan.</p> : latestActivity.map((item) => <div key={`${item.label}-${item.id}`} className="flex items-center gap-4 p-4"><span className="rounded-lg bg-slate-100 p-2 text-slate-600"><CheckCircle2 className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-800">{item.namaPetani || 'Data tanpa nama petani'}</p><p className="text-xs text-slate-500">{item.label} · {item.detail}</p></div><time className="text-xs text-slate-400">{item.tanggal || (item.createdAt ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'short' }).format(recordTime(item.createdAt)) : '-')}</time></div>)}</div></div><div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-900">Ringkasan sumber data</h2><div className="mt-5 space-y-4"><Summary label="Kegiatan SAGGD" value={formatNumber(saggd?.kpi?.totalKegiatan || 0)} status={saggd ? 'Tersinkron' : 'Menunggu data'} /><Summary label="Peserta SAGGD" value={formatNumber(saggd?.kpi?.totalPeserta || 0)} status={saggd ? 'Tersinkron' : 'Menunggu data'} /><Summary label="Responden Baseline" value={formatNumber(baseline?.kpis?.respondents || 0)} status={baseline ? 'Tersinkron' : 'Menunggu data'} /><Summary label="Organisasi SAGGD" value={formatNumber(saggd?.kpi?.totalOrganisasi || 0)} status={saggd ? 'Tersinkron' : 'Menunggu data'} /></div></div></section>
+		<section><div className="mb-4 flex items-end justify-between"><div><p className="text-xs font-bold uppercase tracking-widest text-emerald-700">Navigasi kerja</p><h2 className="mt-1 text-2xl font-black text-slate-900">Pilih modul yang ingin dipantau</h2></div></div><div className="grid gap-4 md:grid-cols-3">{quickLinks.map(([href, title, description, Icon]) => <Link key={href} href={href} className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-emerald-300 hover:shadow-lg"><div className="flex items-start justify-between"><span className="rounded-lg bg-emerald-50 p-3 text-emerald-700"><Icon className="h-5 w-5" /></span><ArrowRight className="h-5 w-5 text-slate-300 transition group-hover:text-emerald-600" /></div><h3 className="mt-5 font-bold text-slate-900">{title}</h3><p className="mt-1 text-sm leading-5 text-slate-500">{description}</p></Link>)}</div></section>
+	</main>;
 }
+
+function Summary({ label, value, status }: { label: string; value: string; status: string }) { return <div className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0"><div><p className="text-sm font-semibold text-slate-700">{label}</p><p className="mt-1 text-xs text-slate-400">{status}</p></div><p className="text-xl font-black text-slate-900">{value}</p></div>; }

@@ -23,6 +23,8 @@ type Petani = {
   kelompokTani: string;
   komoditasUtama: string;
   lahanUtama?: Lahan;
+  lahan2?: Lahan | null;
+  lahanTambahan?: Lahan[];
 };
 
 type AnalisaUsahaRow = {
@@ -78,10 +80,30 @@ const directions = ['Barat', 'Timur', 'Selatan', 'Utara'];
 
 function getLuasHektare(value?: string): number {
   if (!value) return 0;
+  const text = value.trim().toLowerCase();
+  const numberText = text.match(/[\d.,]+/)?.[0];
+  if (!numberText) return 0;
+  const isHectare = /ha\b/.test(text);
+  const normalized = isHectare
+    ? numberText.includes(',') && numberText.includes('.')
+      ? numberText.replace(/\./g, '').replace(',', '.')
+      : numberText.replace(',', '.')
+    : numberText.replace(/[.,]/g, '');
+  const numberValue = Number(normalized);
+  if (!Number.isFinite(numberValue)) return 0;
+  return isHectare ? numberValue : /m[²2]/.test(text) ? numberValue / 10000 : 0;
+}
 
-  const numberValue = Number(value.replace(',', '.').match(/[\d.]+/)?.[0]);
-  if (Number.isNaN(numberValue)) return 0;
-  return /ha/i.test(value) ? numberValue : /m[²2]/i.test(value) ? numberValue / 10000 : 0;
+function getAllFarmerLands(farmer: Petani): Lahan[] {
+  return [
+    farmer.lahanUtama,
+    ...(farmer.lahanTambahan || []),
+    ...(!farmer.lahanTambahan?.length && farmer.lahan2 ? [farmer.lahan2] : []),
+  ].filter((land): land is Lahan => Boolean(land));
+}
+
+function normalizeLabel(value?: string): string {
+  return value?.trim().replace(/\s+/g, ' ').toLocaleLowerCase('id-ID') || '';
 }
 
 export default function DashboardAppoli() {
@@ -167,9 +189,9 @@ export default function DashboardAppoli() {
   }, []);
 
   const stats = useMemo(() => {
-    const totalLuas = petani.reduce((total, item) => total + getLuasHektare(item.lahanUtama?.luasLahan), 0);
-    const komoditas = new Set(petani.map((item) => item.komoditasUtama).filter(Boolean));
-    const kelompok = new Set(petani.map((item) => item.kelompokTani).filter(Boolean));
+    const totalLuas = petani.reduce((total, item) => total + getAllFarmerLands(item).reduce((landTotal, land) => landTotal + getLuasHektare(land.luasLahan), 0), 0);
+    const komoditas = new Set(petani.flatMap((item) => [item.komoditasUtama, ...getAllFarmerLands(item).map((land) => land.komoditas)]).map(normalizeLabel).filter(Boolean));
+    const kelompok = new Set(petani.map((item) => normalizeLabel(item.kelompokTani)).filter(Boolean));
 
     return [
       { label: 'Total Petani', value: petani.length.toLocaleString('id-ID'), icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -180,10 +202,7 @@ export default function DashboardAppoli() {
   }, [petani]);
 
   const mapPoints = useMemo(() => petani.flatMap((farmer) => {
-    const lands = [
-      { title: 'Lahan Utama', land: farmer.lahanUtama },
-      ...(((farmer as Petani & { lahanTambahan?: Lahan[] }).lahanTambahan || []).map((land, index) => ({ title: `Lahan Tambahan ${index + 1}`, land }))),
-    ];
+    const lands = getAllFarmerLands(farmer).map((land, index) => ({ title: index === 0 ? 'Lahan Utama' : `Lahan Tambahan ${index}`, land }));
     return lands.flatMap(({ title, land }) => {
       const latitude = Number(land?.latitude);
       const longitude = Number(land?.longitude);
