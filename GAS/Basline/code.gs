@@ -401,18 +401,18 @@ function resolveColumns_(headers) {
 
 function filterRows_(rows, cols, filters) {
   return rows.filter(function (row) {
-    return (!filters.province || valueFor_(row, cols.province) === filters.province) &&
-      (!filters.commodity || commodityFor_(valueFor_(row, cols.commodity)) === filters.commodity) &&
-      (!filters.district || valueFor_(row, cols.district) === filters.district);
+    return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
+      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity)) &&
+      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district));
   });
 }
 
 function filterTableRows_(rows, cols, filters) {
   return rows.filter(function (row) {
-    return (!filters.province || valueFor_(row, cols.province) === filters.province) &&
-      (!filters.district || valueFor_(row, cols.district) === filters.district) &&
-      (!filters.enumerator || valueFor_(row, cols.enumerator) === filters.enumerator) &&
-      (!filters.commodity || commodityFor_(valueFor_(row, cols.commodity)) === filters.commodity);
+    return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
+      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district)) &&
+      (!filters.enumerator || comparableValue_(valueFor_(row, cols.enumerator)) === comparableValue_(filters.enumerator)) &&
+      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity));
   });
 }
 
@@ -429,9 +429,11 @@ function uniqueValues_(rows, column, transform) {
   rows.forEach(function (row) {
     var v = valueFor_(row, column);
     v = transform ? transform(v) : v;
-    if (v) values[String(v)] = true;
+    var display = displayValue_(v);
+    var key = comparableValue_(display);
+    if (key && !values[key]) values[key] = display;
   });
-  return Object.keys(values).sort();
+  return Object.keys(values).map(function (key) { return values[key]; }).sort();
 }
 
 function countBy_(rows, column, transform) {
@@ -582,8 +584,12 @@ function displayValue_(value, asAge) {
     var age = new Date().getFullYear() - value.getFullYear();
     return age >= 0 && age <= 120 ? age + ' tahun' : 'Perlu validasi';
   }
-  var text = String(value).replace(/^\d+(?:\.\d+)?\s*/, '').trim();
+  var text = String(value).replace(/^\d+(?:\.\d+)?\s*/, '').replace(/\s+/g, ' ').trim();
   return text || String(value);
+}
+
+function comparableValue_(value) {
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function dateValue_(value) {

@@ -1,6 +1,13 @@
 // GANTI fungsi doGet() lama dengan ini:
 function doGet(e) {
   try {
+    const params = (e && e.parameter) || {};
+    if (params.action === "photo") {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        data: getPhotoData(params.fileId)
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     // Memanggil fungsi logika Anda yang sudah ada
     const resultData = getDashboardData();
     
@@ -70,10 +77,16 @@ function getDashboardData() {
   let totalPembiayaanGlobal = 0;
   let totalPeserta = 0;
   let organisasiSet = new Set();
+  let organisasiNames = {};
 
   rows.forEach(row => {
     let org = row[5]; 
-    if (org && String(org).trim() !== "") organisasiSet.add(String(org).trim());
+    if (org && String(org).trim() !== "") {
+      let organizationName = String(org).replace(/\s+/g, " ").trim();
+      let organizationKey = organizationName.toLowerCase();
+      organisasiSet.add(organizationKey);
+      if (!organisasiNames[organizationKey]) organisasiNames[organizationKey] = organizationName;
+    }
     
     let bAktual = idx.biayaAktual !== -1 ? (parseFloat(row[idx.biayaAktual]) || 0) : (parseFloat(row[22]) || 0);
     let bSwadaya = idx.biayaSwadaya !== -1 ? (parseFloat(row[idx.biayaSwadaya]) || 0) : 0;
@@ -142,7 +155,7 @@ function getDashboardData() {
 
     return {
       lokasi: String(row[4] || "-"),           
-      organisasi: String(row[5] || "-"),       
+      organisasi: row[5] ? String(row[5]).replace(/\s+/g, " ").trim() : "-",
       komoditas: String(row[6] || "-"),        
       jenisKegiatan: namaKegiatan,             
       pelapor: String(row[9] || "-"),          
@@ -180,6 +193,31 @@ function getDashboardData() {
       totalPembiayaan: totalPembiayaanGlobal,
       totalOrganisasi: organisasiSet.size
     },
+    filterOptions: {
+      kegiatan: uniqueActivityNames_(kegiatanTerbaru),
+      organisasi: Object.keys(organisasiNames).map(function (key) { return organisasiNames[key]; }).sort()
+    },
     table: kegiatanTerbaru
   };
+}
+
+function uniqueActivityNames_(items) {
+  var names = {};
+  items.forEach(function (item) {
+    var name = String(item.jenisKegiatan || "-").replace(/\s+/g, " ").trim();
+    var key = name.toLowerCase();
+    if (name && !names[key]) names[key] = name;
+  });
+  return Object.keys(names).map(function (key) { return names[key]; }).sort();
+}
+
+function getPhotoData(fileId) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(String(fileId || ""))) {
+    throw new Error("ID foto tidak valid.");
+  }
+  const file = DriveApp.getFileById(fileId);
+  const blob = file.getThumbnail() || file.getBlob();
+  const type = blob.getContentType();
+  if (type.indexOf("image/") !== 0) throw new Error("Dokumentasi bukan file gambar.");
+  return "data:" + type + ";base64," + Utilities.base64Encode(blob.getBytes());
 }
