@@ -127,7 +127,29 @@ function getAnalytics(filters) {
       stage: countBy_(rows, cols.agroecology),
       organicInputs: countMultiBy_(rows, cols.organicInput, /^7\.3\./),
       chemicalFertilizer: countBy_(rows, cols.chemicalFertilizer),
-      chemicalPesticide: countBy_(rows, cols.chemicalPesticide)
+      chemicalPesticide: countBy_(rows, cols.chemicalPesticide),
+      seedSources: countMultiBy_(rows, cols.seedSource, /^7\.4\./),
+      companionPlants: countBy_(rows, cols.companionPlants),
+      soilWaterConservation: countMultiBy_(rows, cols.soilWaterConservation, /^7\.6\./),
+      pestControl: countBy_(rows, cols.pestControl),
+      wasteReuse: countBy_(rows, cols.wasteReuse),
+      bufferProtection: countBy_(rows, cols.bufferProtection),
+      ecosystemProtection: countMultiBy_(rows, cols.ecosystemProtection, /^7\.10\./),
+      agroecologyInterest: countBy_(rows, cols.agroecologyInterest)
+    },
+    profile: {
+      maritalStatus: countBy_(rows, cols.maritalStatus), cooperativeMembership: countBy_(rows, cols.cooperativeMembership)
+    },
+    land: { contaminationRisks: countMultiBy_(rows, cols.contaminationRisk, /^5\.5\./) },
+    commodity: {
+      main: commoditySelections_(rows, cols.commodity), farmingPatterns: countMultiBy_(rows, cols.farmingPattern, /^6\.3\./),
+      varieties: countMultiAcross_(rows, cols.varieties), plantingMethods: countMultiBy_(rows, cols.plantingMethod, /^6\.4\./),
+      agroecologyStage: countBy_(rows, cols.agroecology)
+    },
+    farmManagement: { recordKeeping: countBy_(rows, cols.recordKeeping), qualityStandards: countBy_(rows, cols.qualityStandards) },
+    results: {
+      performance: countBy_(rows, cols.resultCondition), increase: countBy_(rows, cols.increasePercentage),
+      decrease: countBy_(rows, cols.decreasePercentage), suggestionsCount: rows.filter(function (row) { return Boolean(valueFor_(row, cols.suggestions)); }).length
     },
     market: { salesChannels: countBy_(rows, cols.salesChannel), certification: countBy_(rows, cols.certification) },
     support: { cooperative: countMultiBy_(rows, cols.cooperativeSupport, /^8\.9\./), government: countMultiBy_(rows, cols.governmentSupport, /^8\.10\./) },
@@ -348,20 +370,30 @@ function resolveColumns_(headers) {
     farmerName: find(['4 1 nama lengkap']),
     enumerator: find(['3 1 nama petugas']),
     commodity: find(['apa komoditas utama yang sedang diusahakan', 'komoditas utama']),
-    gender: find(['jenis_kelamin']), birthDate: find(['tanggal_lahir']),
+    gender: find(['jenis_kelamin']), birthDate: find(['tanggal_lahir']), maritalStatus: find(['status perkawinan']),
     education: find(['pendidikan_terakhir']), farmerGroup: find(['nama_kelompok_tani']),
-    youth: find(['anak_petani_atau_pemuda']),
+    youth: find(['anak_petani_atau_pemuda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi']),
     landArea: find(['luas lahan area usaha utama yang dikelola']),
-    landStatus: findAll(['status lahan area usaha utama']), waterSource: find(['sumber air utama untuk usaha tani']),
+    landStatus: findAll(['status lahan area usaha utama']), waterSource: find(['sumber air utama untuk usaha tani']), contaminationRisk: find(['sumber risiko pencemaran']),
+    // Tiga kolom cabang Kobo: Z (kakao), CC (padi), dan CY (kopi).
+    // Semua perlu dikumpulkan karena hanya satu kolom terisi sesuai komoditas.
+    varieties: findAll(['5 1 2 varietas kakao', '5 1 1 varietas padi apa', '5 4 varietas kopi', 'varietas padi', 'varietas kakao', 'varietas kopi']),
+    farmingPattern: findAll(['pola usaha tani petani']), plantingMethod: find(['metode tanam yang dikembangkan']),
     yieldKg: find(['rata rata hasil panen dalam satu musim panen']),
     agroecology: find(['tahap mana dalam praktik agroekologi']),
     chemicalFertilizer: find(['masih menggunakan pupuk kimia pada komoditas utama']),
     chemicalPesticide: find(['masih menggunakan pestisida herbisida obat kimia sintetis']),
-    organicInput: find(['input agroekologi organik apa saja']),
+    organicInput: find(['input agroekologi organik apa saja']), seedSource: find(['asal benih bibit klon benur indukan sumber produksi utama']),
+    companionPlants: find(['tanaman pendamping penutup tanah refugia']), soilWaterConservation: find(['cara merawat konservasi tanah dan air']),
+    pestControl: find(['cara utama petani mengendalikan hama']), wasteReuse: find(['sisa panen kotoran ternak limbah kebun']),
+    bufferProtection: find(['zona pembatas atau upaya perlindungan']), ecosystemProtection: find(['praktik yang melindungi ekosistem']),
+    agroecologyInterest: find(['tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi']),
     cost: find(['estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim']), income: find(['estimasi pendapatan yang diperoleh petani dalam satu masa panen']),
+    recordKeeping: find(['mencatat kegiatan usaha tani']), qualityStandards: find(['hasil pertanian saat ini sudah memiliki standar mutu']),
     salesChannel: find(['hasil pertanian biasanya dijual disalurkan']), cooperativeSupport: find(['dukungan apa yang paling sering diterima petani dari koperasi']), governmentSupport: find(['dukungan apa yang paling sering diterima petani pemerintah']), risks: find(['apa 3 risiko atau masalah utama']),
     savingHabit: find(['kebiasaan menabung setelah panen']), savingLocation: find(['dimana anda menabung']), capitalSource: find(['dari mana modal usaha pertanian']),
-    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik']),
+    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik']), resultCondition: find(['kondisi hasil usaha utama dibanding sebelumnya']),
+    increasePercentage: find(['persentase peningkatan']), decreasePercentage: find(['persentase penurunan']), suggestions: find(['saran atau harapan untuk meningkatan usaha tani']),
     geolocation: find(['_geolocation']),
     photo: findAll(['foto bersama responden'])
   };
@@ -429,6 +461,24 @@ function countMultiBy_(rows, column, allowedCode) {
     });
   });
   return Object.keys(count).map(function (key) { return { label: key, value: count[key] }; }).sort(function (a, b) { return b.value - a.value; });
+}
+
+// Varietas pada Kobo berada di kolom berbeda menurut komoditas. Semua kolom
+// aktif dihitung, tanpa memakai valueFor_ yang hanya mengambil kolom pertama.
+function countMultiAcross_(rows, columns) {
+  var count = {};
+  if (!Array.isArray(columns)) columns = [columns];
+  rows.forEach(function (row) {
+    columns.forEach(function (column) {
+      if (column < 0 || row[column] === '' || row[column] == null) return;
+      String(row[column]).split(',').forEach(function (item) {
+        var key = displayValue_(item.trim());
+        if (key) count[key] = (count[key] || 0) + 1;
+      });
+    });
+  });
+  return Object.keys(count).map(function (key) { return { label: key, value: count[key] }; })
+    .sort(function (a, b) { return b.value - a.value; });
 }
 
 function commoditySelections_(rows, column) {
