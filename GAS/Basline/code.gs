@@ -314,40 +314,56 @@ function readHeaders_() {
 }
 
 function resolveColumns_(headers) {
+  // Header dari ekspor XLSForm dapat memakai spasi, garis bawah, titik, atau
+  // kolom pengulangan. Normalisasi membuat resolver tetap cocok dengan format
+  // header pada Baseline.xlsx tanpa mengubah nilai asli dari spreadsheet.
+  function normalized(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
   function find(patterns) {
     for (var i = 0; i < headers.length; i++) {
-      var header = String(headers[i] || '').toLowerCase();
-      for (var j = 0; j < patterns.length; j++) if (header.indexOf(patterns[j]) > -1) return i;
+      var header = normalized(headers[i]);
+      for (var j = 0; j < patterns.length; j++) if (header.indexOf(normalized(patterns[j])) > -1) return i;
     }
     return -1;
   }
+  function findAll(patterns) {
+    var matches = [];
+    headers.forEach(function (header, index) {
+      var text = normalized(header);
+      for (var i = 0; i < patterns.length; i++) {
+        if (text.indexOf(normalized(patterns[i])) > -1) { matches.push(index); return; }
+      }
+    });
+    return matches;
+  }
   var districts = [];
   headers.forEach(function (header, index) {
-    if (/^2\.?\s*kabupaten$/i.test(String(header || ''))) districts.push(index);
+    if (/^2 kabupaten$/i.test(normalized(header))) districts.push(index);
   });
   return {
     id: find(['_id']),
     surveyDate: find(['start']),
     province: find(['provinsi']), district: districts,
-    farmerName: find(['_4_1_nama_lengkap']),
-    enumerator: find(['_3_1_nama_petugas']),
-    commodity: find(['apa_komoditas_utama', 'komoditas_utama', 'komoditas utama']),
+    farmerName: find(['4 1 nama lengkap']),
+    enumerator: find(['3 1 nama petugas']),
+    commodity: find(['apa komoditas utama yang sedang diusahakan', 'komoditas utama']),
     gender: find(['jenis_kelamin']), birthDate: find(['tanggal_lahir']),
     education: find(['pendidikan_terakhir']), farmerGroup: find(['nama_kelompok_tani']),
     youth: find(['anak_petani_atau_pemuda']),
-    landArea: find(['luas_laha_komoditas', 'luas lahan']),
-    landStatus: find(['status_lahan_are']), waterSource: find(['sumber_air_utama']),
-    yieldKg: find(['rata_rata_atu_musim_panen', 'musim_panen_kg']),
-    agroecology: find(['kondisi_praktik_agroekologi']),
-    chemicalFertilizer: find(['dalam_12_bulan_t_pada_komoditas_utama']),
-    chemicalPesticide: find(['dalam_12_bulan_t_obat_kimia_sintetis']),
-    organicInput: find(['input_agroekologi_organik']),
-    cost: find(['estimasi_aan_dalam_satu_musim']), income: find(['estimasi_alam_satu_masa_panen']),
-    salesChannel: find(['hasil_utama_biasanya_d']), cooperativeSupport: find(['dukungan_apa_yang_paling_serin']), governmentSupport: find(['_8_10_dukungan_apa']), risks: find(['apa_3_risiko']),
-    savingHabit: find(['apakah_ada_kebiasaan_menabung']), savingLocation: find(['_8_11_1_dimana_anda_menabung']), capitalSource: find(['_8_12_dari_mana_modal_usaha']),
-    certification: find(['produk_pertanian_sa']),
+    landArea: find(['luas lahan area usaha utama yang dikelola']),
+    landStatus: findAll(['status lahan area usaha utama']), waterSource: find(['sumber air utama untuk usaha tani']),
+    yieldKg: find(['rata rata hasil panen dalam satu musim panen']),
+    agroecology: find(['tahap mana dalam praktik agroekologi']),
+    chemicalFertilizer: find(['masih menggunakan pupuk kimia pada komoditas utama']),
+    chemicalPesticide: find(['masih menggunakan pestisida herbisida obat kimia sintetis']),
+    organicInput: find(['input agroekologi organik apa saja']),
+    cost: find(['estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim']), income: find(['estimasi pendapatan yang diperoleh petani dalam satu masa panen']),
+    salesChannel: find(['hasil pertanian biasanya dijual disalurkan']), cooperativeSupport: find(['dukungan apa yang paling sering diterima petani dari koperasi']), governmentSupport: find(['dukungan apa yang paling sering diterima petani pemerintah']), risks: find(['apa 3 risiko atau masalah utama']),
+    savingHabit: find(['kebiasaan menabung setelah panen']), savingLocation: find(['dimana anda menabung']), capitalSource: find(['dari mana modal usaha pertanian']),
+    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik']),
     geolocation: find(['_geolocation']),
-    photo: find(['_10_1_foto_bersama_responden_1'])
+    photo: findAll(['foto bersama responden'])
   };
 }
 
