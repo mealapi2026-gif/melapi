@@ -6,12 +6,13 @@ export function getAdminServices() {
   const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const databaseURL = process.env.FIREBASE_ADMIN_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error('Firebase Admin credentials belum dikonfigurasi di environment server.');
   }
 
   const adminApp = getApps().length
     ? getApps()[0]
-    : initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    : initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), databaseURL });
   return { adminAuth: getAuth(adminApp), adminDb: getFirestore(adminApp) };
 }
