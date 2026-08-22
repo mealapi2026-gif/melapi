@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trash2, UserPlus, Shield, CheckSquare, Square, Edit2, X, Loader2 } from 'lucide-react';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, updateProfile, type UserCredential } from 'firebase/auth';
-import { app } from '../../../../../lib/firebase';
-import { getUsersFromFirestore, MENU_CONFIG, type UserAccessProfile, updateUserProfileInFirestore, deleteUserProfileFromFirestore } from '../../../../../lib/user-access';
+import { app, auth } from '../../../../../lib/firebase';
+import { getUsersFromFirestore, MENU_CONFIG, type UserAccessProfile, updateUserProfileInFirestore } from '../../../../../lib/user-access';
 
 const AVAILABLE_MENUS = MENU_CONFIG.map((menu) => menu.label);
 
@@ -183,14 +183,23 @@ export default function AdminUserManagement() {
     if (confirmDelete) {
       setIsLoading(true);
       try {
-        setUsers((prev) => prev.filter((user) => user.id !== id));
-
-        // Mark as deleted in Firestore
-        if (uid) {
-          await deleteUserProfileFromFirestore(uid);
+        if (!uid) {
+          throw new Error('UID user tidak tersedia. Akun Firebase tidak dapat dihapus.');
         }
 
-        alert('User berhasil dihapus!');
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) throw new Error('Sesi admin tidak ditemukan. Silakan login kembali.');
+        const response = await fetch('/api/admin/users/delete', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid }),
+        });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(result.error || 'Gagal menghapus akun Firebase.');
+
+        setUsers((prev) => prev.filter((user) => user.id !== id));
+
+        alert('Akun Firebase dan profil Firestore berhasil dihapus.');
       } catch (error) {
         console.error('Error deleting user:', error);
         alert('Gagal menghapus user.');

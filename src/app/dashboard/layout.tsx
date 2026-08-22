@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { ReactNode } from 'react';
 import { auth } from '../../../lib/firebase';
-import { ADMIN_EMAIL, MENU_CONFIG, getUserProfileByUid, getVisibleMenuKeys, isAdminUser, type UserAccessProfile } from '../../../lib/user-access';
+import { MENU_CONFIG, getUserProfileByUid, getVisibleMenuKeys, isAdminUser, type UserAccessProfile } from '../../../lib/user-access';
 import logoSimApi from '../../../public/images/logo-sim-api.png';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -69,7 +69,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         setUserProfile(resolvedProfile);
 
-        const isAllowed = isAdminUser(nextEmail, nextUid) || nextEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const isAllowed = resolvedProfile.role === 'admin';
         if (pathname === '/dashboard/admin/users' && !isAllowed) {
           router.replace('/dashboard');
         }
@@ -99,7 +99,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  const canManageUsers = isAdminUser(userEmail, userUid);
+  const canManageUsers = userProfile?.role === 'admin';
 
   const isActive = (path: string) => pathname === path;
 
