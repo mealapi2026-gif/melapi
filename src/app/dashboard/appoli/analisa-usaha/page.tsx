@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
-import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../../../lib/firebase';
+import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../../../../../lib/firebase';
 import AnalisaUsahaPreview from './analisa-usaha-preview';
 
 interface RowData {
@@ -55,7 +55,10 @@ export default function AnalisaUsahaPage() {
       luasLahan,
       varietas,
       musimTanam,
+      namaPetugas: auth.currentUser?.displayName || auth.currentUser?.email || '',
       totalBiaya,
+      subTotalA,
+      subTotalB,
       totalHasilProduksi,
       labaRugiNetto,
       formData,
@@ -223,7 +226,7 @@ export default function AnalisaUsahaPage() {
       }>;
   }, [formData]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedPetani) {
@@ -231,49 +234,22 @@ export default function AnalisaUsahaPage() {
       return;
     }
 
-    setShowPreviewModal(true);
-  };
-
-  const handleSaveFromPreview = async () => {
     setIsSaving(true);
-
     try {
-      await addDoc(collection(db, 'analisaUsaha'), buildPayload());
-
-      alert('Data Analisa Usaha Tani Berhasil Disimpan!');
-      setShowPreviewModal(false);
-      setSelectedPetani('');
-      setKodePetani('');
-      setKelompokTani('');
-      setLuasLahan('');
-      setVarietas('');
-      setMusimTanam('2026');
-      setFormData({
-        benih: { ...initialRowState },
-        pupuk_padat: { ...initialRowState },
-        pupuk_cair: { ...initialRowState },
-        pupuk_urea: { ...initialRowState },
-        pupuk_tsp: { ...initialRowState },
-        pupuk_phonska: { ...initialRowState },
-        pestisida_organik: { ...initialRowState },
-        pestisida_kimia: { ...initialRowState },
-        lahan_persemaian: { ...initialRowState },
-        sebar_benih: { ...initialRowState },
-        daut_cabut: { ...initialRowState },
-        olah_lahan: { ...initialRowState },
-        tanam: { ...initialRowState },
-        penyulaman: { ...initialRowState },
-        perawatan_tanaman: { ...initialRowState },
-        pemupukan: { ...initialRowState },
-        penyemprotan: { ...initialRowState },
-        pengairan: { ...initialRowState },
-        panen_pengangkutan: { ...initialRowState },
-        sewa_pajak: { ...initialRowState },
-        hasil_panen: { ...initialRowState },
-      });
+      const reference = await addDoc(collection(db, 'analisaUsaha'), buildPayload());
+      const savedSnapshot = await getDoc(reference);
+      const saved = savedSnapshot.data();
+      if (!saved) throw new Error('Data Firestore tidak ditemukan setelah disimpan.');
+      setKodePetani(String(saved.kodePetani || ''));
+      setKelompokTani(String(saved.kelompokTani || ''));
+      setLuasLahan(String(saved.luasLahan || ''));
+      setVarietas(String(saved.varietas || ''));
+      setMusimTanam(String(saved.musimTanam || ''));
+      setFormData(saved.formData as FormState);
+      setShowPreviewModal(true);
     } catch (error) {
       console.error('Gagal menyimpan analisa usaha:', error);
-      alert('Gagal menyimpan data analisa usaha. Periksa koneksi dan akses Firestore.');
+      alert('Data gagal disimpan ke Firestore. Periksa koneksi dan hak akses.');
     } finally {
       setIsSaving(false);
     }
@@ -285,7 +261,7 @@ export default function AnalisaUsahaPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6 bg-white rounded-xl shadow-lg border border-slate-200 text-slate-800 my-6">
-      <div className="text-center border-b border-slate-300 pb-4 mb-6">
+      <div className="text-center border-b border-slate-300 pb-4 mb-6 print:hidden">
         <div className="flex items-center justify-center gap-3 mb-1">
           <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700">
             APPOLI
@@ -302,11 +278,11 @@ export default function AnalisaUsahaPage() {
         </div>
       </div>
 
-      <h2 className="text-center text-lg font-bold uppercase tracking-wide text-slate-900 mb-6">
+      <h2 className="text-center text-lg font-bold uppercase tracking-wide text-slate-900 mb-6 print:hidden">
         ANALISA USAHA TANI
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6 print:hidden">
         <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-4 space-y-4">
           <div>
             <label className="block text-xs font-bold text-emerald-800 uppercase mb-1">
@@ -548,21 +524,6 @@ export default function AnalisaUsahaPage() {
               className="rounded-lg border border-sky-200 bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
             >
               Cetak PDF
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={handleSaveFromPreview}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Menyimpan...
-                </>
-              ) : (
-                'Simpan Data'
-              )}
             </button>
           </div>
         </div>

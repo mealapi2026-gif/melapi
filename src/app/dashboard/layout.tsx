@@ -123,7 +123,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden print:block print:h-auto print:overflow-visible">
       
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
@@ -149,7 +149,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         transform transition-transform duration-300 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
         ${isDesktopSidebarOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full'}
-      `}>
+      print:hidden`}>
         <div className="h-20 lg:h-24 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-3">
             <Image src={logoSimApi} alt="Logo Aliansi Petani Indonesia" preload className="h-12 w-auto object-contain" />
@@ -207,7 +207,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 lg:h-24 bg-white/80 lg:bg-slate-50/80 backdrop-blur-md border-b lg:border-none border-slate-200 flex items-center justify-between px-6 lg:px-10 sticky top-0 z-10">
+        <header className="h-20 lg:h-24 bg-white/80 lg:bg-slate-50/80 backdrop-blur-md border-b lg:border-none border-slate-200 flex items-center justify-between px-6 lg:px-10 sticky top-0 z-10 print:hidden">
           <div className="flex items-center gap-4">
             <button onClick={toggleMenu} className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg">
               <Menu className="w-6 h-6" />
@@ -233,7 +233,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-10">
+        <main className="flex-1 overflow-y-auto p-6 lg:p-10 print:overflow-visible print:p-0">
           {children}
         </main>
       </div>

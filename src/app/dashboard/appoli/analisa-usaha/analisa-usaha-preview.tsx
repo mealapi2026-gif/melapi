@@ -73,9 +73,10 @@ export default function AnalisaUsahaPreview({
   const subTotalC = getRowTotal('sewa_pajak');
 
   return (
-    <div className="flex justify-center bg-slate-100 py-6 min-h-screen print:bg-white">
+    <div className="pdf-preview flex min-h-screen justify-center bg-slate-100 py-6 print:bg-white print:py-0">
+      <style>{'@media print { @page { size: A4; margin: 0; } .pdf-preview, .pdf-preview * { box-shadow: none !important; } .pdf-preview .pdf-paper, .pdf-preview .pdf-paper * { border-color: #000 !important; } }'}</style>
       {/* Kertas A4 */}
-      <div className="w-[210mm] min-h-[297mm] bg-white text-black p-6 shadow-2xl overflow-hidden print:shadow-none" style={{ fontFamily: '"Segoe UI", sans-serif' }}>
+      <div className="pdf-paper w-[210mm] min-h-[297mm] border-0 bg-white p-6 text-black shadow-2xl overflow-hidden print:border-0 print:shadow-none" style={{ fontFamily: '"Segoe UI", sans-serif' }}>
         
         {/* HEADER */}
         <div className="flex items-start justify-between mb-2">
