@@ -19,8 +19,16 @@ import {
 } from 'lucide-react';
 import { ReactNode } from 'react';
 import { auth } from '../../../lib/firebase';
-import { MENU_CONFIG, getUserProfileByUid, getVisibleMenuKeys, isAdminUser, type UserAccessProfile } from '../../../lib/user-access';
+import { hasMenuPermission, MENU_CONFIG, getUserProfileByUid, getVisibleMenuKeys, isAdminUser, type MenuKey, type UserAccessProfile } from '../../../lib/user-access';
 import logoSimApi from '../../../public/images/logo-sim-api.png';
+
+const routeMenuKeys: Array<[string, MenuKey]> = [
+  ['/dashboard/appoli/profil-petani', 'profil-petani'],
+  ['/dashboard/appoli/analisa-usaha', 'analisa-usaha'],
+  ['/dashboard/appoli/inspeksi-ics', 'inspeksi-ics'],
+  ['/dashboard/appoli/data-lahan', 'data-lahan'],
+  ['/dashboard/appoli', 'appoli'],
+];
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -34,9 +42,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   // Move useMemo before conditional return to ensure it's always called
   const visibleMenus = useMemo(
-    () => userProfile?.accessibleMenus ?? getVisibleMenuKeys(userEmail, userUid),
+    () => userProfile
+      ? MENU_CONFIG.filter((menu) => hasMenuPermission(userProfile, menu.key, 'read')).map((menu) => menu.key)
+      : getVisibleMenuKeys(userEmail, userUid),
     [userEmail, userProfile, userUid]
   );
+
+  const currentMenuKey = routeMenuKeys.find(([path]) => pathname === path)?.[1];
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -70,7 +82,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         setUserProfile(resolvedProfile);
 
         const isAllowed = resolvedProfile.role === 'admin';
-        if (pathname === '/dashboard/admin/users' && !isAllowed) {
+        const hasPageAccess = !currentMenuKey || hasMenuPermission(resolvedProfile, currentMenuKey, 'read');
+        if ((pathname === '/dashboard/admin/users' && !isAllowed) || !hasPageAccess) {
           router.replace('/dashboard');
         }
       } catch {

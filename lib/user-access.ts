@@ -12,6 +12,9 @@ export type MenuKey =
   | 'data-lahan'
   | 'admin-users';
 
+export type MenuPermission = { read: boolean; write: boolean };
+export type MenuPermissions = Partial<Record<MenuKey, MenuPermission>>;
+
 export type UserAccessProfile = {
   id: string;
   name: string;
@@ -20,6 +23,7 @@ export type UserAccessProfile = {
   uid?: string;
   role: 'admin' | 'user';
   accessibleMenus: MenuKey[];
+  menuPermissions?: MenuPermissions;
 };
 
 export const ADMIN_EMAIL = 'dionyyr@gmail.com';
@@ -45,6 +49,23 @@ const getDefaultAccessibleMenus = (role: 'admin' | 'user'): MenuKey[] => {
   return ['dashboard', 'appoli', 'profil-petani'];
 };
 
+export const APPOLI_MENU_KEYS: MenuKey[] = ['appoli', 'profil-petani', 'analisa-usaha', 'inspeksi-ics', 'data-lahan'];
+
+export function getMenuPermissions(profile: Pick<UserAccessProfile, 'role' | 'accessibleMenus' | 'menuPermissions'>): MenuPermissions {
+  const permissions: MenuPermissions = {};
+  MENU_CONFIG.forEach((menu) => {
+    const saved = profile.menuPermissions?.[menu.key];
+    permissions[menu.key] = saved ?? { read: profile.role === 'admin' || profile.accessibleMenus.includes(menu.key), write: profile.role === 'admin' };
+  });
+  return permissions;
+}
+
+export function hasMenuPermission(profile: UserAccessProfile | null | undefined, menuKey: MenuKey, action: 'read' | 'write'): boolean {
+  if (!profile) return false;
+  if (profile.role === 'admin') return true;
+  return Boolean(getMenuPermissions(profile)[menuKey]?.[action]);
+}
+
 export async function getUsersFromFirestore(): Promise<UserAccessProfile[]> {
   const snapshot = await getDocs(collection(db, 'users'));
   return snapshot.docs
@@ -62,6 +83,7 @@ export async function getUsersFromFirestore(): Promise<UserAccessProfile[]> {
         accessibleMenus: Array.isArray(data.accessibleMenus)
           ? data.accessibleMenus as MenuKey[]
           : getDefaultAccessibleMenus(role),
+        menuPermissions: data.menuPermissions as MenuPermissions | undefined,
       };
     });
 }
@@ -113,6 +135,7 @@ export async function syncUserProfileToFirestore(firebaseUser: { uid: string; em
     uid: firebaseUser.uid,
     role,
     accessibleMenus: getDefaultAccessibleMenus(role),
+    menuPermissions: Object.fromEntries(MENU_CONFIG.map((menu) => [menu.key, { read: role === 'admin' || getDefaultAccessibleMenus(role).includes(menu.key), write: role === 'admin' }])) as MenuPermissions,
   };
 
   if (!firebaseUser.uid) return profile;
@@ -130,6 +153,7 @@ export async function syncUserProfileToFirestore(firebaseUser: { uid: string; em
       accessibleMenus: Array.isArray(data.accessibleMenus)
         ? data.accessibleMenus as MenuKey[]
         : profile.accessibleMenus,
+      menuPermissions: data.menuPermissions as MenuPermissions | undefined,
     };
   }
 
@@ -165,6 +189,7 @@ export async function getUserProfileByUid(uid?: string | null): Promise<UserAcce
     uid: data.uid ?? uid,
     role: (data.role === 'admin' ? 'admin' : 'user'),
     accessibleMenus: Array.isArray(data.accessibleMenus) ? data.accessibleMenus as MenuKey[] : getDefaultAccessibleMenus('user'),
+    menuPermissions: data.menuPermissions as MenuPermissions | undefined,
   };
 }
 
@@ -181,6 +206,7 @@ export async function updateUserProfileInFirestore(profile: UserAccessProfile): 
     username: profile.username,
     role: profile.role,
     accessibleMenus: profile.accessibleMenus,
+    menuPermissions: profile.menuPermissions,
     updatedAt: new Date().toISOString(),
   }, { merge: true });
 

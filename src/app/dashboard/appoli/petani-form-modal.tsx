@@ -4,6 +4,7 @@ import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { LocateFixed, Loader2, MapPin, Plus, Save, Trash2, X } from 'lucide-react';
 import { db } from '../../../../lib/firebase';
+import { useMenuPermission } from '../../../../lib/use-menu-permission';
 
 type Lahan = { statusLahan: string; alamatLahan: string; luasLahan: string; komoditas: string; latitude: string; longitude: string };
 type PetaniForm = { idPetani: string; namaPetani: string; alamatPetani: string; noHp: string; kelompokTani: string; komoditasUtama: string; lahanUtama: Lahan; lahanTambahan: Lahan[] };
@@ -44,6 +45,7 @@ export default function PetaniFormModal({ open, onClose, initialData }: { open: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [recordingLocation, setRecordingLocation] = useState<number | null>(null);
+  const canWrite = useMenuPermission('profil-petani', 'write');
 
   if (!open) return null;
 
@@ -74,6 +76,7 @@ export default function PetaniFormModal({ open, onClose, initialData }: { open: 
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!canWrite) { setError('Anda tidak memiliki izin tulis untuk profil petani.'); return; }
     setSaving(true);
     setError('');
 
@@ -117,7 +120,7 @@ export default function PetaniFormModal({ open, onClose, initialData }: { open: 
           <LahanFields title="Lahan Utama" land={form.lahanUtama} required onChange={(field, value) => updateLahan(null, field, value)} onRecordLocation={() => recordLocation(null)} recording={recordingLocation === -1} />
           <div className="space-y-4"><div className="flex items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><MapPin className="h-4 w-4 text-emerald-600" />Lahan tambahan</h3><button type="button" onClick={() => setForm((previous) => ({ ...previous, lahanTambahan: [...previous.lahanTambahan, { ...lahanAwal }] }))} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50"><Plus className="h-4 w-4" />Tambah lahan</button></div>{form.lahanTambahan.map((land, index) => <div key={index} className="relative"><LahanFields title={`Lahan Tambahan ${index + 1}`} land={land} onChange={(field, value) => updateLahan(index, field, value)} onRecordLocation={() => recordLocation(index)} recording={recordingLocation === index} /><button type="button" onClick={() => setForm((previous) => ({ ...previous, lahanTambahan: previous.lahanTambahan.filter((_, position) => position !== index) }))} className="absolute right-4 top-2 inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" />Hapus</button></div>)}</div>
           {error && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Batal</button><button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-70">{saving ? <Loader2 className="w-4 animate-spin" /> : <Save className="w-4" />}{saving ? 'Menyimpan...' : initialData ? 'Simpan Perubahan' : 'Simpan Data'}</button></div>
+          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Batal</button><button disabled={saving || !canWrite} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-70">{saving ? <Loader2 className="w-4 animate-spin" /> : <Save className="w-4" />}{saving ? 'Menyimpan...' : initialData ? 'Simpan Perubahan' : 'Simpan Data'}</button></div>
         </form>
       </div>
     </div>

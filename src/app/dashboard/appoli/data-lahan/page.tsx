@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { CalendarDays, Database, Loader2, MapPinned, Save, Sprout, Tractor } from 'lucide-react';
 import { auth, db } from '../../../../../lib/firebase';
+import { useMenuPermission } from '../../../../../lib/use-menu-permission';
 import DataLahanPreview from './data-lahan-preview';
 
 type LandProfile = { statusLahan?: string; alamatLahan?: string; luasLahan?: string; komoditas?: string };
@@ -22,6 +23,7 @@ const directions = ['Barat', 'Timur', 'Selatan', 'Utara'];
 const parseArea = (value = '') => { const amount = Number(value.replace(',', '.').match(/[\d.]+/)?.[0] || 0); return /ha/i.test(value) ? amount : amount / 10000; };
 
 export default function DataLahanPage() {
+    const canWrite = useMenuPermission('data-lahan', 'write');
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [address, setAddress] = useState('');
@@ -55,6 +57,7 @@ export default function DataLahanPage() {
   const updateList = <T,>(setter: React.Dispatch<React.SetStateAction<T[]>>, index: number, field: keyof T, value: string) => setter((current) => current.map((item, position) => position === index ? { ...item, [field]: value } : item));
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canWrite) { setMessage('Anda tidak memiliki izin tulis untuk Data & Lahan.'); return; }
     if (!selected) { setMessage('Pilih petani terlebih dahulu.'); return; }
     void saveData();
   };

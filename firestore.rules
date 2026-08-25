@@ -2,18 +2,59 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
 
-    // This rule allows anyone with your Firestore database reference to view, edit,
-    // and delete all data in your Firestore database. It is useful for getting
-    // started, but it is configured to expire after 30 days because it
-    // leaves your app open to attackers. At that time, all client
-    // requests to your Firestore database will be denied.
-    //
-    // Make sure to write security rules for your app before that time, or else
-    // all client requests to your Firestore database will be denied until you Update
-    // your rules
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2026, 9, 17);
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && (userProfile().role == 'admin'
+        || request.auth.uid == 'Zm6IBgsvXkO9pBRmJlKbJ3YicnA3'
+        || request.auth.token.email == 'dionyyr@gmail.com');
+    }
+
+    function canRead(menu) {
+      return isAdmin()
+        || ('menuPermissions' in userProfile()
+          && menu in userProfile().menuPermissions
+          && userProfile().menuPermissions[menu].read == true)
+        || ('accessibleMenus' in userProfile() && menu in userProfile().accessibleMenus);
+    }
+
+    function canWrite(menu) {
+      return isAdmin()
+        || ('menuPermissions' in userProfile()
+          && menu in userProfile().menuPermissions
+          && userProfile().menuPermissions[menu].write == true);
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow delete: if isAdmin();
+    }
+
+    match /petani/{documentId} {
+      allow read: if canRead('profil-petani') || canRead('appoli');
+      allow write: if canWrite('profil-petani');
+    }
+
+    match /analisaUsaha/{documentId} {
+      allow read: if canRead('analisa-usaha') || canRead('appoli');
+      allow write: if canWrite('analisa-usaha');
+    }
+
+    match /inspeksiICS/{documentId} {
+      allow read: if canRead('inspeksi-ics') || canRead('appoli');
+      allow write: if canWrite('inspeksi-ics');
+    }
+
+    match /dataLahan/{documentId} {
+      allow read: if canRead('data-lahan') || canRead('appoli');
+      allow write: if canWrite('data-lahan');
     }
   }
 }

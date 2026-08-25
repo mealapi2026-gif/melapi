@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { Activity, ClipboardCheck, Edit3, Eye, Leaf, Loader2, Map, MapPinned, Plus, Search, Sprout, Tractor, Trash2, Users } from 'lucide-react';
 import { auth, db } from '../../../../lib/firebase';
+import { useMenuPermission } from '../../../../lib/use-menu-permission';
 import PetaniFormModal from './petani-form-modal';
 import InspeksiIcsPreview from './inspeksi-ics/inspeksi-ics-preview';
 import DataLahanPreview from './data-lahan/data-lahan-preview';
@@ -121,6 +122,10 @@ export default function DashboardAppoli() {
   const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
   const [selectedLandSurvey, setSelectedLandSurvey] = useState<LandSurvey | null>(null);
   const [analisaPage, setAnalisaPage] = useState(1);
+  const canWritePetani = useMenuPermission('profil-petani', 'write');
+  const canWriteAnalisa = useMenuPermission('analisa-usaha', 'write');
+  const canWriteInspection = useMenuPermission('inspeksi-ics', 'write');
+  const canWriteLand = useMenuPermission('data-lahan', 'write');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -160,6 +165,8 @@ export default function DashboardAppoli() {
   const removeRecord = async (collectionName: string, id: string, label: string) => {
     if (!window.confirm(`Hapus ${label} ini? Data yang dihapus tidak dapat dikembalikan.`)) return;
     try {
+      const canWrite = collectionName === 'petani' ? canWritePetani : collectionName === 'analisaUsaha' ? canWriteAnalisa : collectionName === 'inspeksiICS' ? canWriteInspection : canWriteLand;
+      if (!canWrite) throw new Error('User tidak memiliki izin tulis untuk menu ini.');
       if (collectionName === 'petani') {
         const idToken = await auth.currentUser?.getIdToken();
         if (!idToken) throw new Error('Sesi admin tidak ditemukan. Silakan login kembali.');
@@ -294,7 +301,7 @@ export default function DashboardAppoli() {
           <h1 className="text-2xl font-bold text-slate-900">Dashboard Appoli</h1>
           <p className="text-sm text-slate-500">Ringkasan data petani yang tersinkron secara real-time dari Firestore.</p>
         </div>
-        <button type="button" onClick={() => setIsFormOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700">
+        <button type="button" onClick={() => setIsFormOpen(true)} disabled={!canWritePetani} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
           <Plus className="w-4 h-4" /> Tambah Petani
         </button>
       </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../../../../lib/firebase';
+import { useMenuPermission } from '../../../../../lib/use-menu-permission';
 import AnalisaUsahaPreview from './analisa-usaha-preview';
 
 interface RowData {
@@ -34,6 +35,7 @@ const initialRowState: RowData = {
 };
 
 export default function AnalisaUsahaPage() {
+  const canWrite = useMenuPermission('analisa-usaha', 'write');
   const [petaniOptions, setPetaniOptions] = useState<PetaniOption[]>([]);
   const [selectedPetani, setSelectedPetani] = useState('');
   const [kodePetani, setKodePetani] = useState('');
@@ -228,6 +230,11 @@ export default function AnalisaUsahaPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!canWrite) {
+      alert('Anda tidak memiliki izin tulis untuk Analisa Usaha.');
+      return;
+    }
 
     if (!selectedPetani) {
       alert('Pilih petani terlebih dahulu sebelum melihat preview PDF.');
@@ -482,7 +489,7 @@ export default function AnalisaUsahaPage() {
         <div className="flex justify-center pt-2">
           <button
             type="submit"
-            disabled={isSaving}
+            disabled={isSaving || !canWrite}
             className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md transition disabled:opacity-70"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}

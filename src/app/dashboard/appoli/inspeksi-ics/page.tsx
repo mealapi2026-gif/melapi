@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ClipboardCheck, Loader2, Save, ShieldCheck } from 'lucide-react';
 import { db } from '../../../../../lib/firebase';
+import { useMenuPermission } from '../../../../../lib/use-menu-permission';
 import InspeksiIcsPreview from './inspeksi-ics-preview';
 
 type PetaniLahan = { statusLahan?: string; alamatLahan?: string; luasLahan?: string; komoditas?: string };
@@ -28,6 +29,7 @@ const blankLand = (): LandRow => ({ luas: '', utama: '', selingan: '', kimia: ''
 const blankChecks = (): Record<string, CheckValue> => Object.fromEntries(checkKeys.map((key) => [key, { kondisi: 'Diterima', dasar: '' }])) as Record<string, CheckValue>;
 
 export default function InspeksiIcsPage() {
+  const canWrite = useMenuPermission('inspeksi-ics', 'write');
   const [petani, setPetani] = useState<Petani[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [inspektur, setInspektur] = useState('');
@@ -86,6 +88,7 @@ export default function InspeksiIcsPage() {
   const updateCheck = (key: string, field: keyof CheckValue, value: string) => setChecks((current) => ({ ...current, [key]: { ...current[key], [field]: value } as CheckValue }));
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canWrite) { setMessage('Anda tidak memiliki izin tulis untuk Form Inspeksi ICS.'); return; }
     if (!selected) { setMessage('Pilih petani terlebih dahulu.'); return; }
     void saveData();
   };

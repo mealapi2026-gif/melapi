@@ -5,9 +5,11 @@ import { Trash2, UserPlus, Shield, CheckSquare, Square, Edit2, X, Loader2 } from
 import { deleteApp, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, updateProfile, type UserCredential } from 'firebase/auth';
 import { app, auth } from '../../../../../lib/firebase';
-import { getUsersFromFirestore, MENU_CONFIG, type UserAccessProfile, updateUserProfileInFirestore } from '../../../../../lib/user-access';
+import { APPOLI_MENU_KEYS, getMenuPermissions, getUsersFromFirestore, MENU_CONFIG, type MenuKey, type MenuPermissions, type UserAccessProfile, updateUserProfileInFirestore } from '../../../../../lib/user-access';
 
 const AVAILABLE_MENUS = MENU_CONFIG.map((menu) => menu.label);
+const APPOLI_MENUS = MENU_CONFIG.filter((menu) => APPOLI_MENU_KEYS.includes(menu.key));
+const emptyPermissions = (): MenuPermissions => Object.fromEntries(APPOLI_MENU_KEYS.map((key) => [key, { read: false, write: false }])) as MenuPermissions;
 
 type EditingUser = UserAccessProfile | null;
 
@@ -21,6 +23,8 @@ export default function AdminUserManagement() {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editSelectedMenus, setEditSelectedMenus] = useState<string[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<MenuPermissions>(emptyPermissions);
+  const [editPermissions, setEditPermissions] = useState<MenuPermissions>(emptyPermissions);
   const [isLoading, setIsLoading] = useState(false);
   const [usersLoaded, setUsersLoaded] = useState(false);
   useEffect(() => {
@@ -53,6 +57,15 @@ export default function AdminUserManagement() {
         ? prev.filter((m) => m !== menu)
         : [...prev, menu]
     );
+  };
+
+  const togglePermission = (key: MenuKey, action: 'read' | 'write', editing: boolean) => {
+    const setter = editing ? setEditPermissions : setSelectedPermissions;
+    setter((previous) => {
+      const current = previous[key] ?? { read: false, write: false };
+      const value = !current[action];
+      return { ...previous, [key]: { read: action === 'write' ? value || current.read : value, write: action === 'read' ? current.write && value : value } };
+    });
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -88,7 +101,7 @@ export default function AdminUserManagement() {
       }
 
       // Simpan profil dan hak menu user baru.
-      const accessibleMenuKeys = MENU_CONFIG.filter((menu) => selectedMenus.includes(menu.label)).map((menu) => menu.key);
+      const accessibleMenuKeys = MENU_CONFIG.filter((menu) => selectedMenus.includes(menu.label) || selectedPermissions[menu.key]?.read || selectedPermissions[menu.key]?.write).map((menu) => menu.key);
       
       const newUser: UserAccessProfile = {
         id: firebaseUser.user.uid,
@@ -98,6 +111,7 @@ export default function AdminUserManagement() {
         uid: firebaseUser.user.uid,
         role: 'user',
         accessibleMenus: accessibleMenuKeys,
+        menuPermissions: { ...selectedPermissions },
       };
 
       // Step 4: Sync to Firestore BEFORE clearing form
@@ -111,6 +125,7 @@ export default function AdminUserManagement() {
       setNewEmail('');
       setNewPassword('');
       setSelectedMenus([]);
+      setSelectedPermissions(emptyPermissions());
 
       alert('User berhasil ditambahkan. Sesi admin tetap aktif.');
     } catch (error: unknown) {
@@ -141,6 +156,7 @@ export default function AdminUserManagement() {
     setEditSelectedMenus(
       MENU_CONFIG.filter((menu) => user.accessibleMenus.includes(menu.key)).map((menu) => menu.label)
     );
+    setEditPermissions(getMenuPermissions(user));
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -156,7 +172,8 @@ export default function AdminUserManagement() {
         ...editingUser,
         name: editName,
         email: editEmail,
-        accessibleMenus: MENU_CONFIG.filter((menu) => editSelectedMenus.includes(menu.label)).map((menu) => menu.key),
+        accessibleMenus: MENU_CONFIG.filter((menu) => editSelectedMenus.includes(menu.label) || editPermissions[menu.key]?.read || editPermissions[menu.key]?.write).map((menu) => menu.key),
+        menuPermissions: { ...editPermissions },
       };
 
       setUsers((prev) =>
@@ -305,6 +322,15 @@ export default function AdminUserManagement() {
                     </span>
                   </label>
                 ))}
+              </div>
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-emerald-800">Izin Appoli</p>
+                <div className="space-y-2">
+                  {APPOLI_MENUS.map((menu) => {
+                    const permission = selectedPermissions[menu.key] ?? { read: false, write: false };
+                    return <div key={menu.key} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 text-sm"><span className="text-slate-700">{menu.label}</span><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={permission.read} onChange={() => togglePermission(menu.key, 'read', false)} />Baca</label><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={permission.write} onChange={() => togglePermission(menu.key, 'write', false)} />Tulis</label></div>;
+                  })}
+                </div>
               </div>
             </div>
 
@@ -458,6 +484,15 @@ export default function AdminUserManagement() {
                       </span>
                     </label>
                   ))}
+                </div>
+                <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-emerald-800">Izin Appoli</p>
+                  <div className="space-y-2">
+                    {APPOLI_MENUS.map((menu) => {
+                      const permission = editPermissions[menu.key] ?? { read: false, write: false };
+                      return <div key={menu.key} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 text-sm"><span className="text-slate-700">{menu.label}</span><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={permission.read} onChange={() => togglePermission(menu.key, 'read', true)} />Baca</label><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={permission.write} onChange={() => togglePermission(menu.key, 'write', true)} />Tulis</label></div>;
+                    })}
+                  </div>
                 </div>
               </div>
 
