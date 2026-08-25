@@ -7,12 +7,19 @@ import { db } from '../../../../lib/firebase';
 
 type Lahan = { statusLahan: string; alamatLahan: string; luasLahan: string; komoditas: string; latitude: string; longitude: string };
 type PetaniForm = { idPetani: string; namaPetani: string; alamatPetani: string; noHp: string; kelompokTani: string; komoditasUtama: string; lahanUtama: Lahan; lahanTambahan: Lahan[] };
+type InitialPetani = { idPetani: string; namaPetani?: string; alamatPetani?: string; noHp?: string; kelompokTani?: string; komoditasUtama?: string; lahanUtama?: Partial<Lahan>; lahanTambahan?: Partial<Lahan>[] };
 
 const lahanAwal: Lahan = { statusLahan: 'Milik Sendiri', alamatLahan: '', luasLahan: '', komoditas: '', latitude: '', longitude: '' };
 const buatFormAwal = (): PetaniForm => ({
   idPetani: `PTN-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
   namaPetani: '', alamatPetani: '', noHp: '', kelompokTani: '', komoditasUtama: 'Padi Organik',
   lahanUtama: { ...lahanAwal }, lahanTambahan: [],
+});
+const buatFormEdit = (initialData: InitialPetani): PetaniForm => ({
+  ...buatFormAwal(),
+  ...initialData,
+  lahanUtama: { ...lahanAwal, ...(initialData.lahanUtama || {}) },
+  lahanTambahan: (initialData.lahanTambahan || []).map((land) => ({ ...lahanAwal, ...land })),
 });
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500';
 const getPetaniDocumentId = (idPetani: string) => encodeURIComponent(idPetani.trim());
@@ -32,8 +39,8 @@ function LahanFields({ title, land, required, onChange, onRecordLocation, record
   );
 }
 
-export default function PetaniFormModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState<PetaniForm>(buatFormAwal);
+export default function PetaniFormModal({ open, onClose, initialData }: { open: boolean; onClose: () => void; initialData?: InitialPetani | null }) {
+  const [form, setForm] = useState<PetaniForm>(() => initialData ? buatFormEdit(initialData) : buatFormAwal());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [recordingLocation, setRecordingLocation] = useState<number | null>(null);
@@ -95,7 +102,7 @@ export default function PetaniFormModal({ open, onClose }: { open: boolean; onCl
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="form-petani-title" onMouseDown={onClose}>
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
-          <div><h2 id="form-petani-title" className="text-xl font-bold text-slate-900">Input Profil Petani</h2><p className="text-sm text-slate-500">Lengkapi identitas dan informasi lahan petani.</p></div>
+          <div><h2 id="form-petani-title" className="text-xl font-bold text-slate-900">{initialData ? 'Edit Profil Petani' : 'Input Profil Petani'}</h2><p className="text-sm text-slate-500">{initialData ? 'Perbarui identitas dan informasi lahan petani.' : 'Lengkapi identitas dan informasi lahan petani.'}</p></div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Tutup form"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={submit} className="space-y-5 p-5">
@@ -110,7 +117,7 @@ export default function PetaniFormModal({ open, onClose }: { open: boolean; onCl
           <LahanFields title="Lahan Utama" land={form.lahanUtama} required onChange={(field, value) => updateLahan(null, field, value)} onRecordLocation={() => recordLocation(null)} recording={recordingLocation === -1} />
           <div className="space-y-4"><div className="flex items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><MapPin className="h-4 w-4 text-emerald-600" />Lahan tambahan</h3><button type="button" onClick={() => setForm((previous) => ({ ...previous, lahanTambahan: [...previous.lahanTambahan, { ...lahanAwal }] }))} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50"><Plus className="h-4 w-4" />Tambah lahan</button></div>{form.lahanTambahan.map((land, index) => <div key={index} className="relative"><LahanFields title={`Lahan Tambahan ${index + 1}`} land={land} onChange={(field, value) => updateLahan(index, field, value)} onRecordLocation={() => recordLocation(index)} recording={recordingLocation === index} /><button type="button" onClick={() => setForm((previous) => ({ ...previous, lahanTambahan: previous.lahanTambahan.filter((_, position) => position !== index) }))} className="absolute right-4 top-2 inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" />Hapus</button></div>)}</div>
           {error && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Batal</button><button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-70">{saving ? <Loader2 className="w-4 animate-spin" /> : <Save className="w-4" />}{saving ? 'Menyimpan...' : 'Simpan Data'}</button></div>
+          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Batal</button><button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-70">{saving ? <Loader2 className="w-4 animate-spin" /> : <Save className="w-4" />}{saving ? 'Menyimpan...' : initialData ? 'Simpan Perubahan' : 'Simpan Data'}</button></div>
         </form>
       </div>
     </div>
