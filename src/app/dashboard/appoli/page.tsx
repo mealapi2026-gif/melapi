@@ -514,9 +514,9 @@ export default function DashboardAppoli() {
         </div>
       )}
 
-      {selectedAnalisa && <PdfPreviewModal title="Preview Analisa Usaha" recordId={selectedAnalisa.id} onClose={() => setSelectedAnalisa(null)}><AnalisaUsahaPreview namaPetani={selectedAnalisa.namaPetani || ''} kodePetani={selectedAnalisa.petaniId || ''} kelompokTani={selectedAnalisa.kelompokTani || ''} luasLahan={selectedAnalisa.luasLahan || ''} varietas={selectedAnalisa.varietas || ''} musimTanam={selectedAnalisa.musimTanam || ''} totalBiaya={Number(selectedAnalisa.totalBiaya || 0)} totalHasilProduksi={Number(selectedAnalisa.totalHasilProduksi || 0)} labaRugiNetto={Number(selectedAnalisa.labaRugiNetto || 0)} formData={(selectedAnalisa.formData || {}) as unknown as Record<string, { waktu: string; volume: number | ''; harga: number | ''; keterangan: string }>} /></PdfPreviewModal>}
-      {selectedInspection && <PdfPreviewModal title="Preview Inspeksi ICS" recordId={selectedInspection.id} onClose={() => setSelectedInspection(null)}><InspeksiIcsPreview nama={selectedInspection.namaPetani || ''} kode={selectedInspection.idPetani || ''} alamat="" inspektur={selectedInspection.inspektur || ''} tanggal={selectedInspection.tanggal || ''} jam={selectedInspection.jam || ''} statusBidang={selectedInspection.statusBidang || 'Sama'} kelolaOrganik={selectedInspection.kelolaOrganik || 'Ya'} lands={selectedInspection.lahan || []} checks={selectedInspection.kriteria || emptyInspectionChecks} sections={inspectionSections} postHarvest={inspectionPostHarvest} risks={selectedInspection.manajemenRisiko || emptyRisks} riskItems={inspectionRiskItems} recommendation={selectedInspection.rekomendasi || { kondisiSebelum: '-', tahunIni: '-', syaratPenjelasan: '' }} decision={selectedInspection.keputusan || '-'} sanksi={selectedInspection.sanksiTambahan || ''} /></PdfPreviewModal>}
-      {selectedLandSurvey && <PdfPreviewModal title="Preview Data & Lahan" recordId={selectedLandSurvey.id} onClose={() => setSelectedLandSurvey(null)}><DataLahanPreview nama={selectedLandSurvey.namaPetani || ''} kode={selectedLandSurvey.idPetani || ''} alamat={selectedLandSurvey.alamatPetani || ''} kelompok={selectedLandSurvey.kelompokTani || ''} alamatLahan={selectedLandSurvey.alamatLahan || ''} statusMilik={selectedLandSurvey.statusMilik || ''} lands={selectedLandSurvey.lahan || []} totalArea={selectedLandSurvey.totalLuasHa || 0} seasons={selectedLandSurvey.kalenderMasaTanam || []} boundaries={selectedLandSurvey.batasLahan || Object.fromEntries(directions.map((direction) => [direction, { jenis: '', pemilik: '', status: '' }]))} livestock={selectedLandSurvey.ternak || []} /></PdfPreviewModal>}
+      {selectedAnalisa && <PdfPreviewModal key={`analisa-${selectedAnalisa.id}`} title="Preview Analisa Usaha" recordId={selectedAnalisa.id} onClose={() => setSelectedAnalisa(null)}><AnalisaUsahaPreview namaPetani={selectedAnalisa.namaPetani || ''} kodePetani={selectedAnalisa.petaniId || ''} kelompokTani={selectedAnalisa.kelompokTani || ''} luasLahan={selectedAnalisa.luasLahan || ''} varietas={selectedAnalisa.varietas || ''} musimTanam={selectedAnalisa.musimTanam || ''} totalBiaya={Number(selectedAnalisa.totalBiaya || 0)} totalHasilProduksi={Number(selectedAnalisa.totalHasilProduksi || 0)} labaRugiNetto={Number(selectedAnalisa.labaRugiNetto || 0)} formData={(selectedAnalisa.formData || {}) as unknown as Record<string, { waktu: string; volume: number | ''; harga: number | ''; keterangan: string }>} /></PdfPreviewModal>}
+      {selectedInspection && <PdfPreviewModal key={`inspection-${selectedInspection.id}`} title="Preview Inspeksi ICS" recordId={selectedInspection.id} onClose={() => setSelectedInspection(null)}><InspeksiIcsPreview nama={selectedInspection.namaPetani || ''} kode={selectedInspection.idPetani || ''} alamat="" inspektur={selectedInspection.inspektur || ''} tanggal={selectedInspection.tanggal || ''} jam={selectedInspection.jam || ''} statusBidang={selectedInspection.statusBidang || 'Sama'} kelolaOrganik={selectedInspection.kelolaOrganik || 'Ya'} lands={selectedInspection.lahan || []} checks={selectedInspection.kriteria || emptyInspectionChecks} sections={inspectionSections} postHarvest={inspectionPostHarvest} risks={selectedInspection.manajemenRisiko || emptyRisks} riskItems={inspectionRiskItems} recommendation={selectedInspection.rekomendasi || { kondisiSebelum: '-', tahunIni: '-', syaratPenjelasan: '' }} decision={selectedInspection.keputusan || '-'} sanksi={selectedInspection.sanksiTambahan || ''} /></PdfPreviewModal>}
+      {selectedLandSurvey && <PdfPreviewModal key={`land-${selectedLandSurvey.id}`} title="Preview Data & Lahan" recordId={selectedLandSurvey.id} onClose={() => setSelectedLandSurvey(null)}><DataLahanPreview nama={selectedLandSurvey.namaPetani || ''} kode={selectedLandSurvey.idPetani || ''} alamat={selectedLandSurvey.alamatPetani || ''} kelompok={selectedLandSurvey.kelompokTani || ''} alamatLahan={selectedLandSurvey.alamatLahan || ''} statusMilik={selectedLandSurvey.statusMilik || ''} lands={selectedLandSurvey.lahan || []} totalArea={selectedLandSurvey.totalLuasHa || 0} seasons={selectedLandSurvey.kalenderMasaTanam || []} boundaries={selectedLandSurvey.batasLahan || Object.fromEntries(directions.map((direction) => [direction, { jenis: '', pemilik: '', status: '' }]))} livestock={selectedLandSurvey.ternak || []} /></PdfPreviewModal>}
 
       <PetaniFormModal open={isFormOpen} onClose={() => setIsFormOpen(false)} />
     </div>
@@ -577,28 +577,44 @@ function PdfPreviewModal({ title, recordId, pdfUrl, children, onClose }: { title
   const collectionName = title.includes('Analisa') ? 'analisaUsaha' : title.includes('Inspeksi') ? 'inspeksiICS' : 'dataLahan';
   const resolvedPdfUrl = pdfUrl || (resolvedRecordId ? `/api/appoli/pdf?collection=${collectionName}&id=${encodeURIComponent(resolvedRecordId)}` : '');
   const [previewUrl, setPreviewUrl] = useState('');
-
-  useEffect(() => {
-    if (!resolvedPdfUrl || !auth.currentUser) return;
-    let objectUrl = '';
-    void (async () => {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) return;
-      const response = await fetch(resolvedPdfUrl, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) throw new Error('PDF tidak dapat dimuat.');
-      objectUrl = URL.createObjectURL(await response.blob());
-      setPreviewUrl(objectUrl);
-    })().catch((error) => console.error('Gagal memuat preview PDF:', error));
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [resolvedPdfUrl]);
+  const [previewError, setPreviewError] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const previewUrlRef = useRef('');
 
   const printPdf = async () => {
-    if (!previewUrl) return;
     const pdfWindow = window.open('', '_blank');
     if (!pdfWindow) return;
-    pdfWindow.location.href = previewUrl;
+    if (previewUrl) {
+      pdfWindow.location.href = previewUrl;
+      return;
+    }
+    if (!resolvedPdfUrl || !auth.currentUser || isGenerating) {
+      pdfWindow.close();
+      return;
+    }
+    setIsGenerating(true);
+    let timeout = 0;
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const controller = new AbortController();
+      timeout = window.setTimeout(() => controller.abort(), 50000);
+      const response = await fetch(resolvedPdfUrl, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+      if (!response.ok) throw new Error('PDF tidak dapat dimuat.');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      previewUrlRef.current = objectUrl;
+      setPreviewUrl(objectUrl);
+      pdfWindow.location.href = objectUrl;
+    } catch (error) {
+      console.error('Gagal membuat PDF:', error);
+      pdfWindow.close();
+      setPreviewError(error instanceof DOMException && error.name === 'AbortError' ? 'PDF terlalu lama diproses. Coba lagi.' : 'PDF tidak dapat dibuat.');
+    } finally {
+      if (timeout) window.clearTimeout(timeout);
+      setIsGenerating(false);
+    }
   };
-  return <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 print:static print:overflow-visible print:bg-white print:p-0" role="dialog" aria-modal="true"><div className="mx-auto w-full max-w-5xl"><div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 shadow-xl print:hidden"><h2 className="text-sm font-bold text-slate-800">{title}</h2><div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Tutup</button><button type="button" onClick={printPdf} disabled={!previewUrl} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Cetak PDF</button></div></div>{resolvedPdfUrl ? previewUrl ? <iframe title={title} src={previewUrl} className="h-[calc(100vh-110px)] w-full rounded-lg border-0 bg-white shadow-xl print:hidden" /> : <div className="flex h-[calc(100vh-110px)] items-center justify-center rounded-lg bg-white text-sm text-slate-500">Memuat preview PDF...</div> : children}</div></div>;
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+  return <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 print:static print:overflow-visible print:bg-white print:p-0" role="dialog" aria-modal="true"><div className="mx-auto w-full max-w-5xl"><div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 shadow-xl print:hidden"><h2 className="text-sm font-bold text-slate-800">{title}</h2><div className="flex items-center gap-2">{previewError && <span className="text-xs text-rose-600">{previewError}</span>}<button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Tutup</button><button type="button" onClick={printPdf} disabled={isGenerating} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isGenerating ? 'Membuat PDF...' : 'Cetak PDF'}</button></div></div>{children}</div></div>;
 }

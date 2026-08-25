@@ -15,6 +15,7 @@ const buatFormAwal = (): PetaniForm => ({
   lahanUtama: { ...lahanAwal }, lahanTambahan: [],
 });
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500';
+const getPetaniDocumentId = (idPetani: string) => encodeURIComponent(idPetani.trim());
 
 function LahanFields({ title, land, required, onChange, onRecordLocation, recording }: { title: string; land: Lahan; required?: boolean; onChange: (field: keyof Lahan, value: string) => void; onRecordLocation: () => void; recording: boolean }) {
   return (
@@ -70,12 +71,13 @@ export default function PetaniFormModal({ open, onClose }: { open: boolean; onCl
     setError('');
 
     try {
-      const reference = doc(db, 'petani', form.idPetani.trim());
+      const idPetani = form.idPetani.trim();
+      const reference = doc(db, 'petani', getPetaniDocumentId(idPetani));
       const existing = await getDoc(reference);
       await setDoc(reference, {
         ...form,
         lahan2: form.lahanTambahan[0] || null,
-        idPetani: form.idPetani.trim(),
+        idPetani,
         ...(!existing.exists() ? { createdAt: serverTimestamp() } : {}),
         updatedAt: serverTimestamp(),
       }, { merge: true });

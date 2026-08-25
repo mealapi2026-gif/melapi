@@ -246,7 +246,7 @@ export default function AnalisaUsahaPage() {
       setVarietas(String(saved.varietas || ''));
       setMusimTanam(String(saved.musimTanam || ''));
       setFormData(saved.formData as FormState);
-      setShowPreviewModal(true);
+      alert('Analisa usaha berhasil disimpan.');
     } catch (error) {
       console.error('Gagal menyimpan analisa usaha:', error);
       alert('Data gagal disimpan ke Firestore. Periksa koneksi dan hak akses.');
@@ -486,7 +486,7 @@ export default function AnalisaUsahaPage() {
             className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md transition disabled:opacity-70"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-            <span>{isSaving ? 'Menyimpan...' : 'Simpan & Cek PDF'}</span>
+            <span>{isSaving ? 'Menyimpan...' : 'Simpan'}</span>
           </button>
         </div>
       </form>

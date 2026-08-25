@@ -70,7 +70,7 @@ function getDashboard(filters) {
     gender: countBy_(rows, dataset.columns.gender),
     education: countBy_(rows, dataset.columns.education),
     youth: countByFilled_(rows, dataset.columns.youth),
-    landStatus: countMultiBy_(rows, dataset.columns.landStatus, /^5\.2\./),
+    landStatus: countMultiAcross_(rows, dataset.columns.landStatus, /^5\.2\./),
     waterSources: countMultiBy_(rows, dataset.columns.waterSource, /^5\.4\./),
     agroecology: countBy_(rows, dataset.columns.agroecology),
     chemicalReduction: { fertilizer: countBy_(rows, dataset.columns.chemicalFertilizer), pesticide: countBy_(rows, dataset.columns.chemicalPesticide) },
@@ -107,7 +107,7 @@ function getAnalytics(filters) {
   }).length;
   var commodity = countBy_(rows, cols.commodity, commodityFor_);
   var validEconomics = rows.filter(function (row) {
-    var cost = Number(valueFor_(row, cols.cost)), income = Number(valueFor_(row, cols.income));
+    var cost = parseNumber_(valueFor_(row, cols.cost)), income = parseNumber_(valueFor_(row, cols.income));
     return isFinite(cost) && cost >= 0 && isFinite(income) && income >= 0;
   }).length;
   var certified = rows.filter(function (row) { return /ya|aktif/i.test(String(valueFor_(row, cols.certification))); }).length;
@@ -158,7 +158,7 @@ function getAnalytics(filters) {
     monitoring: {
       provinces: countBy_(rows, cols.province), districts: countBy_(rows, cols.district),
       commodities: commodity, gender: countBy_(rows, cols.gender), education: countBy_(rows, cols.education), youth: countBy_(rows, cols.youth),
-      landStatus: countMultiBy_(rows, cols.landStatus, /^5\.2\./), waterSources: countMultiBy_(rows, cols.waterSource, /^5\.4\./)
+      landStatus: countMultiAcross_(rows, cols.landStatus, /^5\.2\./), waterSources: countMultiBy_(rows, cols.waterSource, /^5\.4\./)
     },
     quality: {
       uniqueResponses: rows.length, duplicateResponses: dataset.allRows.length - dataset.rows.length,
@@ -175,8 +175,8 @@ function productivityByCommodity_(rows, cols) {
   var groups = {};
   rows.forEach(function (row) {
     var commodity = commodityFor_(valueFor_(row, cols.commodity));
-    var areaM2 = Number(valueFor_(row, cols.landArea));
-    var yieldKg = Number(valueFor_(row, cols.yieldKg));
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
     if (!isFinite(areaM2) || areaM2 <= 0 || !isFinite(yieldKg) || yieldKg < 0 || commodity.indexOf('validasi') > -1 || commodity.indexOf('Multi-') === 0) return;
     if (!groups[commodity]) groups[commodity] = { yieldKg: [], yieldPerHa: [], areaHa: [] };
     groups[commodity].yieldKg.push(yieldKg);
@@ -192,8 +192,8 @@ function economicsByCommodity_(rows, cols) {
   var groups = {};
   rows.forEach(function (row) {
     var commodity = commodityFor_(valueFor_(row, cols.commodity));
-    var cost = Number(valueFor_(row, cols.cost));
-    var income = Number(valueFor_(row, cols.income));
+    var cost = parseNumber_(valueFor_(row, cols.cost));
+    var income = parseNumber_(valueFor_(row, cols.income));
     if (!isFinite(cost) || cost < 0 || !isFinite(income) || income < 0 || commodity.indexOf('validasi') > -1 || commodity.indexOf('Multi-') === 0) return;
     if (!groups[commodity]) groups[commodity] = { cost: [], income: [], margin: [], roi: [] };
     groups[commodity].cost.push(cost);
@@ -209,8 +209,8 @@ function economicsByCommodity_(rows, cols) {
 function productivityOutliers_(rows, cols) {
   var values = [];
   rows.forEach(function (row) {
-    var areaM2 = Number(valueFor_(row, cols.landArea));
-    var yieldKg = Number(valueFor_(row, cols.yieldKg));
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
     if (isFinite(areaM2) && areaM2 > 0 && isFinite(yieldKg) && yieldKg >= 0) values.push(yieldKg / (areaM2 / 10000));
   });
   if (values.length < 4) return { count: 0, lowerBound: 0, upperBound: 0 };
@@ -361,40 +361,40 @@ function resolveColumns_(headers) {
   }
   var districts = [];
   headers.forEach(function (header, index) {
-    if (/^2 kabupaten$/i.test(normalized(header))) districts.push(index);
+    if (/^2 kabupaten(?: |$)/i.test(normalized(header))) districts.push(index);
   });
   return {
     id: find(['_id']),
     surveyDate: find(['start']),
     province: find(['provinsi']), district: districts,
-    farmerName: find(['4 1 nama lengkap']),
-    enumerator: find(['3 1 nama petugas']),
+    farmerName: find(['4 1 nama lengkap', 'nama lengkap']),
+    enumerator: find(['3 1 nama petugas', 'nama petugas']),
     commodity: find(['apa komoditas utama yang sedang diusahakan', 'komoditas utama']),
-    gender: find(['jenis_kelamin']), birthDate: find(['tanggal_lahir']), maritalStatus: find(['status perkawinan']),
-    education: find(['pendidikan_terakhir']), farmerGroup: find(['nama_kelompok_tani']),
-    youth: find(['anak_petani_atau_pemuda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi']),
-    landArea: find(['luas lahan area usaha utama yang dikelola']),
-    landStatus: findAll(['status lahan area usaha utama']), waterSource: find(['sumber air utama untuk usaha tani']), contaminationRisk: find(['sumber risiko pencemaran']),
+    gender: find(['jenis kelamin']), birthDate: find(['tanggal lahir']), maritalStatus: find(['status perkawinan']),
+    education: find(['pendidikan terakhir']), farmerGroup: find(['nama kelompok tani']),
+    youth: find(['anak petani atau pemuda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi', 'apakah tergabung sebagai', '8 11 1 apakah tergabung']),
+    landArea: find(['luas lahan area usaha utama yang dikelola', 'berapa luas lahan komoditas utama', 'berapa luas laha komoditas utama', 'luas lahan komoditas utama']),
+    landStatus: findAll(['status lahan area usaha utama', 'bagaimana status lahan area usaha', '5 2']), waterSource: find(['sumber air utama untuk usaha tani', 'sumber air utama']), contaminationRisk: find(['sumber risiko pencemaran', 'apakah lahan area usaha']),
     // Tiga kolom cabang Kobo: Z (kakao), CC (padi), dan CY (kopi).
     // Semua perlu dikumpulkan karena hanya satu kolom terisi sesuai komoditas.
     varieties: findAll(['5 1 2 varietas kakao', '5 1 1 varietas padi apa', '5 4 varietas kopi', 'varietas padi', 'varietas kakao', 'varietas kopi']),
-    farmingPattern: findAll(['pola usaha tani petani']), plantingMethod: find(['metode tanam yang dikembangkan']),
-    yieldKg: find(['rata rata hasil panen dalam satu musim panen']),
-    agroecology: find(['tahap mana dalam praktik agroekologi']),
-    chemicalFertilizer: find(['masih menggunakan pupuk kimia pada komoditas utama']),
-    chemicalPesticide: find(['masih menggunakan pestisida herbisida obat kimia sintetis']),
-    organicInput: find(['input agroekologi organik apa saja']), seedSource: find(['asal benih bibit klon benur indukan sumber produksi utama']),
-    companionPlants: find(['tanaman pendamping penutup tanah refugia']), soilWaterConservation: find(['cara merawat konservasi tanah dan air']),
-    pestControl: find(['cara utama petani mengendalikan hama']), wasteReuse: find(['sisa panen kotoran ternak limbah kebun']),
-    bufferProtection: find(['zona pembatas atau upaya perlindungan']), ecosystemProtection: find(['praktik yang melindungi ekosistem']),
-    agroecologyInterest: find(['tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi']),
-    cost: find(['estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim']), income: find(['estimasi pendapatan yang diperoleh petani dalam satu masa panen']),
-    recordKeeping: find(['mencatat kegiatan usaha tani']), qualityStandards: find(['hasil pertanian saat ini sudah memiliki standar mutu']),
-    salesChannel: find(['hasil pertanian biasanya dijual disalurkan']), cooperativeSupport: find(['dukungan apa yang paling sering diterima petani dari koperasi']), governmentSupport: find(['dukungan apa yang paling sering diterima petani pemerintah']), risks: find(['apa 3 risiko atau masalah utama']),
-    savingHabit: find(['kebiasaan menabung setelah panen']), savingLocation: find(['dimana anda menabung']), capitalSource: find(['dari mana modal usaha pertanian']),
-    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik']), resultCondition: find(['kondisi hasil usaha utama dibanding sebelumnya']),
-    increasePercentage: find(['persentase peningkatan']), decreasePercentage: find(['persentase penurunan']), suggestions: find(['saran atau harapan untuk meningkatan usaha tani']),
-    geolocation: find(['_geolocation']),
+    farmingPattern: findAll(['pola usaha tani petani', '6 3']), plantingMethod: find(['metode tanam yang dikembangkan', '6 4']),
+    yieldKg: find(['rata rata hasil panen dalam satu musim panen', 'rata rata hasil dalam satu musim panen', 'rata rata produksi dalam satu musim panen', '8 1 berapa rata rata']),
+    agroecology: find(['tahap mana dalam praktik agroekologi', '6 5']),
+    chemicalFertilizer: find(['masih menggunakan pupuk kimia pada komoditas utama', '7 1']),
+    chemicalPesticide: find(['masih menggunakan pestisida herbisida obat kimia sintetis', '7 2']),
+    organicInput: find(['input agroekologi organik apa saja', '7 3']), seedSource: find(['asal benih bibit klon benur indukan sumber produksi utama', '7 4']),
+    companionPlants: find(['tanaman pendamping penutup tanah refugia', '6 2']), soilWaterConservation: find(['cara merawat konservasi tanah dan air', '7 6']),
+    pestControl: find(['cara utama petani mengendalikan hama', '7 7']), wasteReuse: find(['sisa panen kotoran ternak limbah kebun', '7 8']),
+    bufferProtection: find(['zona pembatas atau upaya perlindungan', '7 9']), ecosystemProtection: find(['praktik yang melindungi ekosistem', '7 10']),
+    agroecologyInterest: find(['tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi', '7 18']),
+    cost: find(['estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim', '8 3 berapa estimasi', 'estimasi biaya', 'biaya untuk tanam']), income: find(['estimasi pendapatan yang diperoleh petani dalam satu masa panen', '8 4 berapa estimasi', 'estimasi pendapatan', 'pendapatan yang diperoleh petani']),
+    recordKeeping: find(['mencatat kegiatan usaha tani', '8 2']), qualityStandards: find(['hasil pertanian saat ini sudah memiliki standar mutu', '8 8']),
+    salesChannel: find(['hasil pertanian biasanya dijual disalurkan', '8 6']), cooperativeSupport: find(['dukungan apa yang paling sering diterima petani dari koperasi', '8 9']), governmentSupport: find(['dukungan apa yang paling sering diterima petani pemerintah', '8 10']), risks: find(['apa 3 risiko atau masalah utama', '9 2']),
+    savingHabit: find(['kebiasaan menabung setelah panen', '8 11']), savingLocation: find(['dimana anda menabung', '8 11 1']), capitalSource: find(['dari mana modal usaha pertanian', '8 12']),
+    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik', '8 7 apakah produk pertanian']), resultCondition: find(['kondisi hasil usaha utama dibanding sebelumnya', '9 1 dalam 1 tahun']),
+    increasePercentage: find(['persentase peningkatan', '9 1 4']), decreasePercentage: find(['persentase penurunan', '9 1 3']), suggestions: find(['saran atau harapan untuk meningkatan usaha tani', '9 3']),
+    geolocation: findAll(['_geolocation', '11 geotag']),
     photo: findAll(['foto bersama responden'])
   };
 }
@@ -467,14 +467,16 @@ function countMultiBy_(rows, column, allowedCode) {
 
 // Varietas pada Kobo berada di kolom berbeda menurut komoditas. Semua kolom
 // aktif dihitung, tanpa memakai valueFor_ yang hanya mengambil kolom pertama.
-function countMultiAcross_(rows, columns) {
+function countMultiAcross_(rows, columns, allowedCode) {
   var count = {};
   if (!Array.isArray(columns)) columns = [columns];
   rows.forEach(function (row) {
     columns.forEach(function (column) {
       if (column < 0 || row[column] === '' || row[column] == null) return;
       String(row[column]).split(',').forEach(function (item) {
-        var key = displayValue_(item.trim());
+        var itemText = item.trim();
+        if (allowedCode && !allowedCode.test(itemText)) return;
+        var key = displayValue_(itemText);
         if (key) count[key] = (count[key] || 0) + 1;
       });
     });
@@ -491,7 +493,7 @@ function financialByCommodity_(rows, cols) {
   var groups = {};
   rows.forEach(function (row) {
     var commodity = commodityFor_(valueFor_(row, cols.commodity));
-    var cost = Number(valueFor_(row, cols.cost)), income = Number(valueFor_(row, cols.income));
+    var cost = parseNumber_(valueFor_(row, cols.cost)), income = parseNumber_(valueFor_(row, cols.income));
     if (commodity === 'Perlu validasi' || commodity.indexOf('Multi-') === 0) return;
     if (!groups[commodity]) groups[commodity] = { costs: [], incomes: [] };
     if (isFinite(cost) && cost >= 0) groups[commodity].costs.push(cost);
@@ -508,7 +510,27 @@ function makeKpis_(rows, cols) {
     certified: rows.filter(function (row) { return /ya|aktif/i.test(String(valueFor_(row, cols.certification))); }).length
   };
 }
-function numbers_(rows, column) { return rows.map(function (row) { return Number(valueFor_(row, column)); }).filter(function (n) { return isFinite(n) && n > 0; }); }
+function numbers_(rows, column) { return rows.map(function (row) { return parseNumber_(valueFor_(row, column)); }).filter(function (n) { return isFinite(n) && n > 0; }); }
+function parseNumber_(value) {
+  if (typeof value === 'number') return value;
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return NaN;
+  text = text.replace(/\s/g, '');
+  var multiplier = 1, unit = text.match(/(miliar|juta|ribu|m)$/i);
+  if (unit) {
+    multiplier = /miliar/i.test(unit[1]) ? 1000000000 : /juta/i.test(unit[1]) ? 1000000 : 1000;
+    text = text.slice(0, -unit[1].length).replace(/^rp|^idr/i, '');
+    text = text.replace(',', '.');
+    var unitValue = Number(text);
+    return isFinite(unitValue) ? unitValue * multiplier : NaN;
+  }
+  text = text.replace(/^rp|^idr/i, '');
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+  else if (/^-?\d{1,3}(,\d{3})+$/.test(text)) text = text.replace(/,/g, '');
+  else if (text.indexOf(',') > -1 && text.indexOf('.') > -1) text = text.replace(/\./g, '').replace(',', '.');
+  else if (text.indexOf(',') > -1) text = text.replace(',', '.');
+  return Number(text);
+}
 function average_(values) { return values.length ? values.reduce(function (a, b) { return a + b; }, 0) / values.length : 0; }
 
 // Pertanyaan komoditas pada form seharusnya satu jawaban. Beberapa baris
