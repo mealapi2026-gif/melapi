@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
-import { Activity, ClipboardCheck, Eye, Leaf, Loader2, Map, MapPinned, Plus, Search, Sprout, Tractor, Trash2, Users } from 'lucide-react';
+import { Activity, ClipboardCheck, Edit3, Eye, Leaf, Loader2, Map, MapPinned, Plus, Search, Sprout, Tractor, Trash2, Users } from 'lucide-react';
 import { auth, db } from '../../../../lib/firebase';
 import PetaniFormModal from './petani-form-modal';
 import InspeksiIcsPreview from './inspeksi-ics/inspeksi-ics-preview';
@@ -19,6 +19,7 @@ type Lahan = {
 
 type Petani = {
   idPetani: string;
+  documentId?: string;
   namaPetani: string;
   kelompokTani: string;
   komoditasUtama: string;
@@ -126,8 +127,9 @@ export default function DashboardAppoli() {
       collection(db, 'petani'),
       (snapshot) => {
         setPetani(snapshot.docs.map((document) => ({
-          idPetani: document.id,
-          ...document.data(),
+          ...(document.data() as Omit<Petani, 'documentId'>),
+          idPetani: String(document.data().idPetani || document.id),
+          documentId: document.id,
         })) as Petani[]);
         setLoading(false);
       },
@@ -158,7 +160,22 @@ export default function DashboardAppoli() {
   const removeRecord = async (collectionName: string, id: string, label: string) => {
     if (!window.confirm(`Hapus ${label} ini? Data yang dihapus tidak dapat dikembalikan.`)) return;
     try {
-      await deleteDoc(doc(db, collectionName, id));
+      if (collectionName === 'petani') {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) throw new Error('Sesi admin tidak ditemukan. Silakan login kembali.');
+        const response = await fetch('/api/appoli/petani/delete', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId: id }),
+        });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(result.error || 'Gagal menghapus profil petani.');
+      } else {
+        await deleteDoc(doc(db, collectionName, id));
+      }
+          /*
+    <div className="flex justify-center gap-2"><button type="button" onClick={() => setSelectedPetani(item)} title="Lihat profil petani" className="rounded-md p-1.5 text-blue-600 transition hover:bg-blue-50"><Eye className="w-4 h-4" /></button><button type="button" onClick={() => removeRecord('petani', item.documentId || encodeURIComponent(item.idPetani), 'profil petani')} title="Hapus profil petani" className="rounded-md p-1.5 text-rose-600 transition hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button></div>
+      */
     } catch (deleteError) {
       console.error(`Gagal menghapus ${label}:`, deleteError);
       setError(`Data ${label} gagal dihapus. Periksa hak akses Firestore.`);
@@ -303,7 +320,7 @@ export default function DashboardAppoli() {
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 w-4 -translate-y-1/2 text-slate-400" /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cari ID, nama, kelompok..." className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500" /></div>
           </div>
           {error ? <p className="p-6 text-sm text-rose-600">{error}</p> : loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><Loader2 className="w-5 animate-spin text-emerald-600" />Memuat data petani...</div> : (
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm text-slate-600"><thead className="border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-3">ID & Nama</th><th className="px-5 py-3">Kelompok / Komoditas</th><th className="px-5 py-3">Luas Lahan</th><th className="px-5 py-3 text-center">Aksi</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredPetani.length === 0 ? <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-500">Belum ada data petani yang sesuai.</td></tr> : filteredPetani.map((item) => <tr key={item.idPetani} className="hover:bg-slate-50"><td className="px-5 py-3"><p className="font-semibold text-slate-900">{item.namaPetani}</p><p className="font-mono text-xs text-slate-500">{item.idPetani}</p></td><td className="px-5 py-3"><p className="font-medium text-slate-800">{item.kelompokTani}</p><p className="mt-0.5 flex items-center gap-1 text-xs text-emerald-600"><Sprout className="w-3 h-3" />{item.komoditasUtama}</p></td><td className="px-5 py-3 font-medium">{item.lahanUtama?.luasLahan || '—'}</td><td className="px-5 py-3"><div className="flex justify-center gap-2"><button type="button" onClick={() => setSelectedPetani(item)} title="Lihat profil petani" className="rounded-md p-1.5 text-blue-600 transition hover:bg-blue-50"><Eye className="w-4 h-4" /></button><button type="button" onClick={() => removeRecord('petani', item.idPetani, 'profil petani')} title="Hapus profil petani" className="rounded-md p-1.5 text-rose-600 transition hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button></div></td></tr>)}</tbody></table></div>
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm text-slate-600"><thead className="border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-3">ID & Nama</th><th className="px-5 py-3">Kelompok / Komoditas</th><th className="px-5 py-3">Luas Lahan</th><th className="px-5 py-3 text-center">Aksi</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredPetani.length === 0 ? <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-500">Belum ada data petani yang sesuai.</td></tr> : filteredPetani.map((item) => <tr key={item.documentId || item.idPetani} className="hover:bg-slate-50"><td className="px-5 py-3"><p className="font-semibold text-slate-900">{item.namaPetani}</p><p className="font-mono text-xs text-slate-500">{item.idPetani}</p></td><td className="px-5 py-3"><p className="font-medium text-slate-800">{item.kelompokTani}</p><p className="mt-0.5 flex items-center gap-1 text-xs text-emerald-600"><Sprout className="w-3 h-3" />{item.komoditasUtama}</p></td><td className="px-5 py-3 font-medium">{item.lahanUtama?.luasLahan || '—'}</td><td className="px-5 py-3"><div className="flex justify-center gap-2"><button type="button" onClick={() => setSelectedPetani(item)} title="Lihat profil petani" className="rounded-md p-1.5 text-blue-600 transition hover:bg-blue-50"><Eye className="w-4 h-4" /></button><button type="button" onClick={() => removeRecord('petani', item.documentId || encodeURIComponent(item.idPetani), 'profil petani')} title="Hapus profil petani" className="rounded-md p-1.5 text-rose-600 transition hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button></div></td></tr>)}</tbody></table></div>
           )}
         </section>
 
@@ -514,11 +531,12 @@ export default function DashboardAppoli() {
         </div>
       )}
 
+      {selectedPetani && !isFormOpen && <button type="button" onClick={() => setIsFormOpen(true)} title="Edit profil petani" className="fixed bottom-6 right-6 z-[60] inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-xl hover:bg-emerald-700"><Edit3 className="h-4 w-4" />Edit profil</button>}
       {selectedAnalisa && <PdfPreviewModal key={`analisa-${selectedAnalisa.id}`} title="Preview Analisa Usaha" recordId={selectedAnalisa.id} onClose={() => setSelectedAnalisa(null)}><AnalisaUsahaPreview namaPetani={selectedAnalisa.namaPetani || ''} kodePetani={selectedAnalisa.petaniId || ''} kelompokTani={selectedAnalisa.kelompokTani || ''} luasLahan={selectedAnalisa.luasLahan || ''} varietas={selectedAnalisa.varietas || ''} musimTanam={selectedAnalisa.musimTanam || ''} totalBiaya={Number(selectedAnalisa.totalBiaya || 0)} totalHasilProduksi={Number(selectedAnalisa.totalHasilProduksi || 0)} labaRugiNetto={Number(selectedAnalisa.labaRugiNetto || 0)} formData={(selectedAnalisa.formData || {}) as unknown as Record<string, { waktu: string; volume: number | ''; harga: number | ''; keterangan: string }>} /></PdfPreviewModal>}
       {selectedInspection && <PdfPreviewModal key={`inspection-${selectedInspection.id}`} title="Preview Inspeksi ICS" recordId={selectedInspection.id} onClose={() => setSelectedInspection(null)}><InspeksiIcsPreview nama={selectedInspection.namaPetani || ''} kode={selectedInspection.idPetani || ''} alamat="" inspektur={selectedInspection.inspektur || ''} tanggal={selectedInspection.tanggal || ''} jam={selectedInspection.jam || ''} statusBidang={selectedInspection.statusBidang || 'Sama'} kelolaOrganik={selectedInspection.kelolaOrganik || 'Ya'} lands={selectedInspection.lahan || []} checks={selectedInspection.kriteria || emptyInspectionChecks} sections={inspectionSections} postHarvest={inspectionPostHarvest} risks={selectedInspection.manajemenRisiko || emptyRisks} riskItems={inspectionRiskItems} recommendation={selectedInspection.rekomendasi || { kondisiSebelum: '-', tahunIni: '-', syaratPenjelasan: '' }} decision={selectedInspection.keputusan || '-'} sanksi={selectedInspection.sanksiTambahan || ''} /></PdfPreviewModal>}
       {selectedLandSurvey && <PdfPreviewModal key={`land-${selectedLandSurvey.id}`} title="Preview Data & Lahan" recordId={selectedLandSurvey.id} onClose={() => setSelectedLandSurvey(null)}><DataLahanPreview nama={selectedLandSurvey.namaPetani || ''} kode={selectedLandSurvey.idPetani || ''} alamat={selectedLandSurvey.alamatPetani || ''} kelompok={selectedLandSurvey.kelompokTani || ''} alamatLahan={selectedLandSurvey.alamatLahan || ''} statusMilik={selectedLandSurvey.statusMilik || ''} lands={selectedLandSurvey.lahan || []} totalArea={selectedLandSurvey.totalLuasHa || 0} seasons={selectedLandSurvey.kalenderMasaTanam || []} boundaries={selectedLandSurvey.batasLahan || Object.fromEntries(directions.map((direction) => [direction, { jenis: '', pemilik: '', status: '' }]))} livestock={selectedLandSurvey.ternak || []} /></PdfPreviewModal>}
 
-      <PetaniFormModal open={isFormOpen} onClose={() => setIsFormOpen(false)} />
+      <PetaniFormModal key={selectedPetani?.idPetani || 'new'} open={isFormOpen} initialData={selectedPetani} onClose={() => { setIsFormOpen(false); setSelectedPetani(null); }} />
     </div>
   );
 }
