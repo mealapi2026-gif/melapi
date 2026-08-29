@@ -14,7 +14,7 @@ type Season = { tanam: string; panen: string; produksi: string; pendataan: strin
 type Boundary = { jenis: string; pemilik: string; status: string };
 type Livestock = { jenis: string; jumlah: string; pakan: string; kondisi: string };
 
-const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20';
+const inputClass = 'w-full';
 const blankLand = (index: number): LandRow => ({ kode: `Lahan ${index + 1}`, luas: '', utama: '', sisipan: '', kimia: '' });
 const blankSeason = (): Season => ({ tanam: '', panen: '', produksi: '', pendataan: '' });
 const blankBoundary = (): Boundary => ({ jenis: '', pemilik: '', status: '' });

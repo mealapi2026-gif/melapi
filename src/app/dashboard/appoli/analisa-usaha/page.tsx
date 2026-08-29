@@ -298,7 +298,7 @@ export default function AnalisaUsahaPage() {
             <select
               value={selectedPetani}
               onChange={(e) => setSelectedPetani(e.target.value)}
-              className="w-full bg-white border border-emerald-300 rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full"
             >
               <option value="">-- Pilih petani --</option>
               {petaniOptions.map((petani) => (

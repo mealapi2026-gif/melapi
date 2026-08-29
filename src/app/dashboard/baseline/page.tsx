@@ -66,6 +66,8 @@ type Options = {
   provinces: string[];
   commodities: string[];
   districts: string[];
+  subdistricts: string[];
+  villages: string[];
 };
 type SurveyTable = {
   headers: string[];
@@ -79,7 +81,7 @@ type SurveyDetail = {
   photos?: { label: string; fileId: string }[];
 };
 type Analytics = {
-  trends?: { month: string; responses: number }[];
+  trends?: { day: string; responses: number }[];
   statistics?: { landArea?: Summary; yieldKg?: Summary };
   productivity?: ProductMetric[];
   economics?: EconomyMetric[];
@@ -134,6 +136,8 @@ type Analytics = {
   monitoring?: {
     provinces?: CountItem[];
     districts?: CountItem[];
+    subdistricts?: CountItem[];
+    villages?: CountItem[];
     commodities?: CountItem[];
     gender?: CountItem[];
     education?: CountItem[];
@@ -186,9 +190,13 @@ export default function BaselinePage() {
     provinces: [],
     commodities: [],
     districts: [],
+    subdistricts: [],
+    villages: [],
   });
   const [province, setProvince] = useState("");
   const [district, setDistrict] = useState("");
+  const [subdistrict, setSubdistrict] = useState("");
+  const [village, setVillage] = useState("");
   const [commodity, setCommodity] = useState("");
   const [page, setPage] = useState(0);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -213,8 +221,8 @@ export default function BaselinePage() {
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
   const filters = useCallback(
-    () => ({ province, district, commodity }),
-    [province, district, commodity],
+    () => ({ province, district, subdistrict, village, commodity }),
+    [province, district, subdistrict, village, commodity],
   );
   const load = useCallback(async () => {
     setLoading(true);
@@ -247,14 +255,16 @@ export default function BaselinePage() {
   useEffect(() => {
     Promise.resolve().then(async () => {
       try {
-        setOptions(await api<Options>("options"));
+        setOptions(
+          await api<Options>("options", { province, district, subdistrict }),
+        );
       } catch (cause) {
         setError(
           cause instanceof Error ? cause.message : "Filter gagal dimuat.",
         );
       }
     });
-  }, []);
+  }, [province, district, subdistrict]);
   useEffect(() => {
     Promise.resolve().then(load);
   }, [load]);
@@ -287,6 +297,8 @@ export default function BaselinePage() {
         filters: {
           province: province || "",
           district: district || "",
+          subdistrict: subdistrict || "",
+          village: village || "",
           commodity: commodity || "",
         },
         dashboard: {
@@ -410,13 +422,15 @@ export default function BaselinePage() {
           {error}
         </div>
       )}
-      <section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 xl:grid-cols-4 xl:items-end">
+      <section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 xl:grid-cols-3 xl:items-end">
         <Filter
           label="Provinsi"
           value={province}
           onChange={(value) => {
             setProvince(value);
             setDistrict("");
+            setSubdistrict("");
+            setVillage("");
             setPage(0);
           }}
           values={options.provinces}
@@ -427,10 +441,33 @@ export default function BaselinePage() {
           value={district}
           onChange={(value) => {
             setDistrict(value);
+            setSubdistrict("");
+            setVillage("");
             setPage(0);
           }}
           values={options.districts}
           empty="Semua kabupaten"
+        />
+        <Filter
+          label="Kecamatan"
+          value={subdistrict}
+          onChange={(value) => {
+            setSubdistrict(value);
+            setVillage("");
+            setPage(0);
+          }}
+          values={options.subdistricts}
+          empty="Semua kecamatan"
+        />
+        <Filter
+          label="Desa / Kelurahan"
+          value={village}
+          onChange={(value) => {
+            setVillage(value);
+            setPage(0);
+          }}
+          values={options.villages}
+          empty="Semua desa / kelurahan"
         />
         <Filter
           label="Komoditas"
@@ -447,6 +484,8 @@ export default function BaselinePage() {
           onClick={() => {
             setProvince("");
             setDistrict("");
+            setSubdistrict("");
+            setVillage("");
             setCommodity("");
             setPage(0);
           }}
@@ -513,7 +552,7 @@ export default function BaselinePage() {
           <div className="flex items-start justify-between gap-3">
             <SectionTitle
               title="Tren Pengisian Survei"
-              text="Jumlah respons per bulan berdasarkan waktu pencatatan."
+              text="Jumlah respons per hari, maksimal tujuh tanggal pengisian terbaru."
             />
             <DownloadChartButton title="Tren Pengisian Survei" />
           </div>
@@ -522,7 +561,7 @@ export default function BaselinePage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={analytics.trends}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Line
@@ -576,6 +615,14 @@ export default function BaselinePage() {
           <Distribution
             title="Sebaran Kabupaten"
             items={analytics?.monitoring?.districts}
+          />
+          <Distribution
+            title="Sebaran Kecamatan"
+            items={analytics?.monitoring?.subdistricts}
+          />
+          <Distribution
+            title="Sebaran Desa / Kelurahan"
+            items={analytics?.monitoring?.villages}
           />
           <Distribution
             title="Kepemilikan Lahan"
@@ -1053,9 +1100,9 @@ export default function BaselinePage() {
             ) : (
               <>
                 <dl className="grid gap-x-6 sm:grid-cols-2">
-                  {(detail?.fields ?? []).map((field) => (
+                  {(detail?.fields ?? []).map((field, index) => (
                     <div
-                      key={field.label}
+                      key={`${field.label}-${index}-${String(field.value ?? "").slice(0, 12)}`}
                       className="border-b border-slate-100 py-3"
                     >
                       <dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -1194,20 +1241,38 @@ function Filter({
   empty: string;
 }) {
   return (
-    <label className="grid flex-1 gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+    <label className="grid min-w-[180px] flex-1 gap-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
       {label}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case text-slate-700 outline-none focus:border-emerald-500"
-      >
-        <option value="">{empty}</option>
-        {values.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full appearance-none rounded-2xl border border-slate-200 bg-white/90 px-3.5 py-2.5 pr-10 text-sm font-medium normal-case text-slate-700 shadow-sm transition duration-200 hover:border-emerald-300 hover:shadow-md focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+        >
+          <option value="">{empty}</option>
+          {values.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+            className="h-4 w-4"
+          >
+            <path
+              d="M5.5 7.5L10 12l4.5-4.5"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </div>
     </label>
   );
 }

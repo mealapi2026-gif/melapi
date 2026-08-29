@@ -447,3 +447,251 @@ function lihatHeaderKobo() {
   if (fields.length > 0) headerSheet.autoResizeColumns(1, fields.length);
   Logger.log(`Header Kobo berhasil ditulis mendatar ke sheet header: ${fields.length} field.`);
 }
+
+// Memindahkan foto dokumentasi yang URL-nya sudah tersimpan di sheet ke:
+// Folder utama / Bulan Tahun / Nama Petugas / Nama Petani.
+function pindahkanFotoDokumentasiBaseline() {
+  const DRIVE_FOLDER_ID = "1JLW1KnMggBnDHrYPBNUhpQ3PMP9N67Qz";
+  const CHECKPOINT_KEY = "BASELINE_FOTO_LAST_ROW";
+  const MAX_RUNTIME_MS = 240000;
+  const startedAt = Date.now();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) throw new Error("Proses pemindahan foto sedang berjalan di eksekusi lain.");
+
+  try {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) throw new Error("Spreadsheet aktif tidak ditemukan.");
+
+  const sheet = spreadsheet.getSheetByName("Baseline");
+  if (!sheet) throw new Error("Sheet Baseline tidak ditemukan.");
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) {
+    Logger.log("Tidak ada data foto untuk dipindahkan.");
+    return;
+  }
+
+  const headers = values[0];
+  const columns = resolveColumns_(headers);
+  const rootFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const folderCache = {};
+  const movedFileIds = {};
+  let movedCount = 0;
+  let failedCount = 0;
+  let processedRows = 0;
+  let stoppedForTime = false;
+  let stoppedForError = false;
+  const savedCheckpoint = Number(PropertiesService.getScriptProperties().getProperty(CHECKPOINT_KEY) || 1);
+  const startRow = Math.max(2, savedCheckpoint + 1);
+  const totalDataRows = values.length - 1;
+  const firstDataIndex = startRow - 2;
+
+  if (firstDataIndex >= totalDataRows) {
+    Logger.log("Tidak ada baris baru. Checkpoint terakhir: baris " + savedCheckpoint + ".");
+    return;
+  }
+  Logger.log("Mulai pemindahan dari baris " + startRow + " dari total " + (totalDataRows + 1) + " baris.");
+
+  const safeFolderName = function (value, fallback) {
+    const name = String(value == null ? "" : value)
+      .replace(/[\\/\?<>\:\*\|\"]+/g, "_")
+      .replace(/\s+/g, " ")
+      .trim();
+    return name || fallback;
+  };
+
+  const getOrCreateFolder = function (parentFolder, name) {
+    const folderName = safeFolderName(name, "Tanpa Nama");
+    const cacheKey = parentFolder.getId() + ":" + folderName;
+    if (folderCache[cacheKey]) return DriveApp.getFolderById(folderCache[cacheKey]);
+    const folders = parentFolder.getFoldersByName(folderName);
+    const folder = folders.hasNext() ? folders.next() : parentFolder.createFolder(folderName);
+    folderCache[cacheKey] = folder.getId();
+    return folder;
+  };
+
+  const fileIdsFromValue = function (value) {
+    const text = String(value == null ? "" : value);
+    const matches = text.match(/[a-zA-Z0-9_-]{20,}/g) || [];
+    return matches.filter(function (id, index) { return matches.indexOf(id) === index; });
+  };
+
+  const dateForRow = function (row) {
+    const value = valueFor_(row, columns.surveyDate);
+    const date = Object.prototype.toString.call(value) === "[object Date]" ? value : new Date(value);
+    return isNaN(date.getTime()) ? new Date() : date;
+  };
+
+  for (let dataIndex = firstDataIndex; dataIndex < totalDataRows; dataIndex++) {
+    if (Date.now() - startedAt >= MAX_RUNTIME_MS) {
+      stoppedForTime = true;
+      Logger.log("Batas waktu aman tercapai sebelum baris " + (dataIndex + 2) + ". Jalankan ulang untuk melanjutkan.");
+      break;
+    }
+
+    const row = values[dataIndex + 1];
+    const sheetRow = dataIndex + 2;
+    let rowFailed = false;
+    const date = dateForRow(row);
+    const monthFolder = getOrCreateFolder(rootFolder, monthNames[date.getMonth()] + " " + date.getFullYear());
+    const petugasFolder = getOrCreateFolder(monthFolder, valueFor_(row, columns.enumerator));
+    const petaniFolder = getOrCreateFolder(petugasFolder, valueFor_(row, columns.farmerName));
+
+    const photoColumns = Array.isArray(columns.photo) ? columns.photo : [columns.photo];
+    photoColumns.forEach(function (column) {
+      if (column < 0) return;
+      fileIdsFromValue(row[column]).forEach(function (fileId) {
+        if (movedFileIds[fileId]) return;
+        try {
+          const file = DriveApp.getFileById(fileId);
+          file.moveTo(petaniFolder);
+          movedFileIds[fileId] = true;
+          movedCount++;
+        } catch (error) {
+          rowFailed = true;
+          failedCount++;
+          Logger.log("Gagal memindahkan file " + fileId + ": " + error.message);
+        }
+      });
+    });
+
+    if (rowFailed) {
+      stoppedForError = true;
+      Logger.log("Baris " + sheetRow + " belum ditandai selesai karena ada file gagal. Jalankan ulang untuk mencoba lagi.");
+      break;
+    }
+    PropertiesService.getScriptProperties().setProperty(CHECKPOINT_KEY, String(sheetRow));
+    processedRows++;
+    Logger.log("Progres: baris " + sheetRow + "/" + (totalDataRows + 1) + " selesai, " + movedCount + " file dipindahkan.");
+  }
+
+  const lastCheckpoint = PropertiesService.getScriptProperties().getProperty(CHECKPOINT_KEY) || "1";
+  Logger.log("Pemindahan foto selesai: " + processedRows + " baris diproses, " + movedCount + " file dipindahkan, " + failedCount + " gagal. Checkpoint: baris " + lastCheckpoint + ".");
+  if (stoppedForTime) Logger.log("Status: dihentikan sebelum limit waktu Google Apps Script.");
+  if (stoppedForError) Logger.log("Status: dihentikan karena error file; baris tersebut akan diulang pada eksekusi berikutnya.");
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function resetCheckpointFotoDokumentasiBaseline() {
+  PropertiesService.getScriptProperties().deleteProperty("BASELINE_FOTO_LAST_ROW");
+  Logger.log("Checkpoint foto Baseline dihapus. Eksekusi berikutnya dimulai dari baris data pertama.");
+}
+
+// Mengganti nama foto dokumentasi menjadi ID submission, misalnya 123456.jpg
+// dan 123456_1.jpg jika satu baris memiliki lebih dari satu foto.
+function ubahNamaFotoDokumentasiBaseline() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) throw new Error("Spreadsheet aktif tidak ditemukan.");
+
+  const sheet = spreadsheet.getSheetByName("Baseline");
+  if (!sheet) throw new Error("Sheet Baseline tidak ditemukan.");
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) {
+    Logger.log("Tidak ada data foto untuk diubah namanya.");
+    return;
+  }
+
+  const headers = values[0];
+  const columns = resolveColumns_(headers);
+  const idColumn = headers.findIndex(function (header) {
+    return String(header || "").trim().toLowerCase() === "_id";
+  });
+  if (idColumn < 0) throw new Error("Kolom _id tidak ditemukan pada sheet Baseline.");
+
+  const photoColumns = Array.isArray(columns.photo) ? columns.photo : [columns.photo];
+  const fileIdsFromValue = function (value) {
+    const matches = String(value == null ? "" : value).match(/[a-zA-Z0-9_-]{20,}/g) || [];
+    return matches.filter(function (id, index) { return matches.indexOf(id) === index; });
+  };
+  const fileExtension = function (fileName) {
+    const match = String(fileName || "").match(/(\.[^./\\]+)$/);
+    return match ? match[1] : "";
+  };
+
+  let renamedCount = 0;
+  let failedCount = 0;
+  values.slice(1).forEach(function (row, rowIndex) {
+    const submissionId = String(row[idColumn] == null ? "" : row[idColumn]).trim();
+    if (!submissionId) {
+      Logger.log("Baris " + (rowIndex + 2) + " dilewati: ID kosong.");
+      return;
+    }
+
+    let photoNumber = 0;
+    photoColumns.forEach(function (column) {
+      if (column < 0) return;
+      fileIdsFromValue(row[column]).forEach(function (fileId) {
+        const suffix = photoNumber === 0 ? "" : "_" + photoNumber;
+        photoNumber++;
+        try {
+          const file = DriveApp.getFileById(fileId);
+          const newName = submissionId + suffix + fileExtension(file.getName());
+          if (file.getName() !== newName) {
+            file.setName(newName);
+            renamedCount++;
+            Logger.log("Baris " + (rowIndex + 2) + ": " + file.getName() + " berhasil diubah menjadi " + newName + ".");
+          }
+        } catch (error) {
+          failedCount++;
+          Logger.log("Gagal mengubah nama file " + fileId + " pada baris " + (rowIndex + 2) + ": " + error.message);
+        }
+      });
+    });
+  });
+
+  Logger.log("Penggantian nama foto selesai: " + renamedCount + " file diubah, " + failedCount + " gagal.");
+  tandaiIdDobelBaseline();
+}
+
+// Memberi warna pada semua sel kolom _id yang memiliki nilai duplikat.
+function tandaiIdDobelBaseline() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) throw new Error("Spreadsheet aktif tidak ditemukan.");
+
+  const sheet = spreadsheet.getSheetByName("Baseline");
+  if (!sheet) throw new Error("Sheet Baseline tidak ditemukan.");
+
+  const lastRow = sheet.getLastRow();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idColumn = headers.findIndex(function (header) {
+    return String(header || "").trim().toLowerCase() === "_id";
+  });
+  if (idColumn < 0) throw new Error("Kolom _id tidak ditemukan pada sheet Baseline.");
+  if (lastRow < 2) {
+    Logger.log("Tidak ada data ID untuk diperiksa.");
+    return;
+  }
+
+  const idRange = sheet.getRange(2, idColumn + 1, lastRow - 1, 1);
+  const idValues = idRange.getValues();
+  const idCounts = {};
+  idValues.forEach(function (row) {
+    const id = String(row[0] == null ? "" : row[0]).trim();
+    if (id) idCounts[id] = (idCounts[id] || 0) + 1;
+  });
+
+  const duplicateColors = [
+    "#f4cccc", "#cfe2f3", "#d9ead3", "#fff2cc", "#eadcf8",
+    "#fce5cd", "#d0e0e3", "#ead1dc", "#c9daf8", "#d9d2e9"
+  ];
+  const duplicateIds = Object.keys(idCounts).filter(function (id) { return idCounts[id] > 1; });
+  const duplicateColorById = {};
+  duplicateIds.forEach(function (id, index) {
+    duplicateColorById[id] = duplicateColors[index % duplicateColors.length];
+  });
+  const backgrounds = idValues.map(function (row) {
+    const id = String(row[0] == null ? "" : row[0]).trim();
+    return [duplicateColorById[id] || null];
+  });
+  idRange.setBackgrounds(backgrounds);
+
+  const duplicateCells = idValues.reduce(function (count, row) {
+    const id = String(row[0] == null ? "" : row[0]).trim();
+    return count + (id && idCounts[id] > 1 ? 1 : 0);
+  }, 0);
+  Logger.log("Pemeriksaan ID selesai: " + duplicateIds.length + " ID duplikat, " + duplicateCells + " sel diberi warna.");
+}

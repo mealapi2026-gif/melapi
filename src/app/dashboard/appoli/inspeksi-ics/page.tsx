@@ -13,7 +13,7 @@ type LandRow = { luas: string; utama: string; selingan: string; kimia: string };
 type CheckValue = { kondisi: 'Diterima' | 'Tidak'; dasar: string };
 type CheckGroup = { title: string; items: [string, string][] };
 
-const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20';
+const inputClass = 'w-full';
 const sections: CheckGroup[] = [
   { title: '1. Kriteria Produksi Ternak', items: [['ternak_kondisi', 'Kondisi hewan ternak'], ['ternak_makan', 'Makanan yang diberikan']] },
   { title: '2. Status Lahan', items: [['lahan_konversi', 'Apakah lahan sudah melewati masa konversi'], ['lahan_pisah', 'Lahan organik terpisah dari lahan konvensional'], ['lahan_konservasi', 'Konservasi sistem air, tanah, hutan, dan lainnya'], ['lahan_latih', 'Petani terlatih dalam sistem pertanian organik'], ['lahan_filter', 'Zona pembatas dan filter untuk mencegah kontaminasi']] },

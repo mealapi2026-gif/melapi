@@ -323,14 +323,14 @@ export default function SaggdDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
         <label className="text-xs font-bold text-slate-500">
           Jenis kegiatan
-          <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="mt-2 w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+          <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="mt-2 w-full">
             <option value="">Semua kegiatan</option>
             {activityOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-500">
           Nama organisasi
-          <select value={organizationFilter} onChange={(e) => setOrganizationFilter(e.target.value)} className="mt-2 w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+          <select value={organizationFilter} onChange={(e) => setOrganizationFilter(e.target.value)} className="mt-2 w-full">
             <option value="">Semua organisasi</option>
             {organizationOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>

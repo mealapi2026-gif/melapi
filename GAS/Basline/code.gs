@@ -16,11 +16,12 @@ function doGet(e) {
     var action = params.action || 'dashboard';
     var filters = {
       province: params.province || '', commodity: params.commodity || '',
-      district: params.district || '', enumerator: params.enumerator || '',
+      district: params.district || '', subdistrict: params.subdistrict || '',
+      village: params.village || '', enumerator: params.enumerator || '',
       onlyDuplicates: params.onlyDuplicates === 'true'
     };
     var data;
-    if (action === 'options') data = getFilterOptions();
+    if (action === 'options') data = getFilterOptions(filters);
     else if (action === 'dashboard') data = getDashboard(filters);
     else if (action === 'analytics') data = getAnalytics(filters);
     else if (action === 'table') data = getTable(filters, params.page, params.pageSize);
@@ -46,12 +47,22 @@ function setSpreadsheetId(id) {
   CONFIG.spreadsheetId = String(id);
 }
 
-function getFilterOptions() {
+function getFilterOptions(filters) {
   var dataset = readDataset_();
+  filters = filters || {};
+  var provinceRows = filterRows_(dataset.rows, dataset.columns, { province: filters.province });
+  var districtRows = filterRows_(provinceRows, dataset.columns, {
+    province: filters.province, district: filters.district
+  });
+  var subdistrictRows = filterRows_(districtRows, dataset.columns, {
+    province: filters.province, district: filters.district, subdistrict: filters.subdistrict
+  });
   return {
     provinces: uniqueValues_(dataset.rows, dataset.columns.province),
     commodities: uniqueValues_(dataset.rows, dataset.columns.commodity, commodityFor_),
-    districts: uniqueValues_(dataset.rows, dataset.columns.district),
+    districts: uniqueValues_(provinceRows, dataset.columns.district),
+    subdistricts: uniqueValues_(districtRows, dataset.columns.subdistrict),
+    villages: uniqueValues_(subdistrictRows, dataset.columns.village),
     enumerators: uniqueValues_(dataset.rows, dataset.columns.enumerator),
     total: dataset.rows.length
   };
@@ -95,10 +106,12 @@ function getAnalytics(filters) {
     var value = valueFor_(row, cols.surveyDate);
     var date = Object.prototype.toString.call(value) === '[object Date]' ? value : new Date(value);
     if (isNaN(date.getTime())) return;
-    var month = Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
-    trend[month] = (trend[month] || 0) + 1;
+    var day = Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    trend[day] = (trend[day] || 0) + 1;
   });
-  var trends = Object.keys(trend).sort().map(function (month) { return { month: month, responses: trend[month] }; });
+  // Tampilkan maksimal tujuh tanggal pengisian terbaru agar tren ringkas dan
+  // tetap relevan terhadap filter wilayah/komoditas yang sedang aktif.
+  var trends = Object.keys(trend).sort().slice(-7).map(function (day) { return { day: day, responses: trend[day] }; });
   var land = numbers_(rows, cols.landArea);
   var yieldKg = numbers_(rows, cols.yieldKg);
   var missingCoordinates = rows.filter(function (row) { return !parseLocation_(valueFor_(row, cols.geolocation)); }).length;
@@ -114,7 +127,7 @@ function getAnalytics(filters) {
   var leadingCommodity = commodity.length ? commodity[0].label : 'Belum tersedia';
   var insights = [
     'Komoditas dengan respons terbanyak: ' + leadingCommodity + '.',
-    trends.length > 1 ? 'Data mencakup ' + trends.length + ' periode bulan pencatatan.' : 'Belum cukup periode untuk membentuk tren waktu.',
+    trends.length > 1 ? 'Data mencakup ' + trends.length + ' hari pengisian terbaru.' : 'Belum cukup hari pengisian untuk membentuk tren waktu.',
     missingCoordinates ? missingCoordinates + ' respons belum memiliki koordinat valid.' : 'Seluruh respons memiliki koordinat yang valid.'
   ];
   return {
@@ -157,6 +170,7 @@ function getAnalytics(filters) {
     risks: countMultiBy_(rows, cols.risks, /^9\.2\./),
     monitoring: {
       provinces: countBy_(rows, cols.province), districts: countBy_(rows, cols.district),
+      subdistricts: countBy_(rows, cols.subdistrict), villages: countBy_(rows, cols.village),
       commodities: commodity, gender: countBy_(rows, cols.gender), education: countBy_(rows, cols.education), youth: countBy_(rows, cols.youth),
       landStatus: countMultiAcross_(rows, cols.landStatus, /^5\.2\./), waterSources: countMultiBy_(rows, cols.waterSource, /^5\.4\./)
     },
@@ -325,6 +339,11 @@ function readDataset_() {
   var values = sheet.getDataRange().getValues();
   if (values.length < 2) throw new Error('Sheet belum memiliki data respons.');
   var headers = values.shift();
+  // Ekspor/sinkronisasi Kobo dapat menyisakan baris kosong di bawah data.
+  // Baris tersebut bukan respons dan tidak boleh ikut menghitung KPI.
+  values = values.filter(function (row) {
+    return row.some(function (value) { return value !== '' && value != null; });
+  });
   var columns = resolveColumns_(headers);
   return { allRows: values, rows: deduplicateRows_(values, columns.id), duplicateIds: duplicateIds_(values, columns.id), columns: columns };
 }
@@ -336,66 +355,100 @@ function readHeaders_() {
 }
 
 function resolveColumns_(headers) {
-  // Header dari ekspor XLSForm dapat memakai spasi, garis bawah, titik, atau
-  // kolom pengulangan. Normalisasi membuat resolver tetap cocok dengan format
-  // header pada Baseline.xlsx tanpa mengubah nilai asli dari spreadsheet.
+  // Header dari ekspor XLSForm dapat memakai spasi, garis bawah, titik, simbol,
+  // atau kolom pengulangan. Normalisasi aman memastikan format header baru
+  // tetap cocok tanpa mengubah nilai asli dari spreadsheet.
   function normalized(value) {
-    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[\/._-]+/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  // Pola harus cocok dari header menuju pola, bukan sebaliknya. Pencocokan
+  // terbalik membuat header pendek seperti "_id" dianggap cocok dengan
+  // "pestisida" dan menyebabkan diagram membaca ID respons sebagai jawaban.
+  function headerMatches(header, pattern) {
+    var text = normalized(header);
+    var candidate = normalized(pattern);
+    return Boolean(candidate) && (text === candidate || text.indexOf(candidate) > -1);
   }
   function find(patterns) {
-    for (var i = 0; i < headers.length; i++) {
-      var header = normalized(headers[i]);
-      for (var j = 0; j < patterns.length; j++) if (header.indexOf(normalized(patterns[j])) > -1) return i;
+    // Urutan pola adalah prioritas. Letakkan nama/nomor pertanyaan yang paling
+    // spesifik terlebih dahulu agar kolom "Lainnya" tidak mengalahkan kolom inti.
+    for (var p = 0; p < patterns.length; p++) {
+      for (var i = 0; i < headers.length; i++) {
+        if (headerMatches(headers[i], patterns[p])) return i;
+      }
     }
     return -1;
   }
   function findAll(patterns) {
     var matches = [];
     headers.forEach(function (header, index) {
-      var text = normalized(header);
       for (var i = 0; i < patterns.length; i++) {
-        if (text.indexOf(normalized(patterns[i])) > -1) { matches.push(index); return; }
+        if (headerMatches(header, patterns[i])) { matches.push(index); return; }
       }
     });
     return matches;
   }
   var districts = [];
   headers.forEach(function (header, index) {
-    if (/^2 kabupaten(?: |$)/i.test(normalized(header))) districts.push(index);
+    if (/kabupaten/i.test(normalized(header))) districts.push(index);
   });
   return {
-    id: find(['_id']),
-    surveyDate: find(['start']),
-    province: find(['provinsi']), district: districts,
-    farmerName: find(['4 1 nama lengkap', 'nama lengkap']),
-    enumerator: find(['3 1 nama petugas', 'nama petugas']),
-    commodity: find(['apa komoditas utama yang sedang diusahakan', 'komoditas utama']),
-    gender: find(['jenis kelamin']), birthDate: find(['tanggal lahir']), maritalStatus: find(['status perkawinan']),
-    education: find(['pendidikan terakhir']), farmerGroup: find(['nama kelompok tani']),
-    youth: find(['anak petani atau pemuda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi', 'apakah tergabung sebagai', '8 11 1 apakah tergabung']),
-    landArea: find(['luas lahan area usaha utama yang dikelola', 'berapa luas lahan komoditas utama', 'berapa luas laha komoditas utama', 'luas lahan komoditas utama']),
-    landStatus: findAll(['status lahan area usaha utama', 'bagaimana status lahan area usaha', '5 2']), waterSource: find(['sumber air utama untuk usaha tani', 'sumber air utama']), contaminationRisk: find(['sumber risiko pencemaran', 'apakah lahan area usaha']),
-    // Tiga kolom cabang Kobo: Z (kakao), CC (padi), dan CY (kopi).
-    // Semua perlu dikumpulkan karena hanya satu kolom terisi sesuai komoditas.
-    varieties: findAll(['5 1 2 varietas kakao', '5 1 1 varietas padi apa', '5 4 varietas kopi', 'varietas padi', 'varietas kakao', 'varietas kopi']),
-    farmingPattern: findAll(['pola usaha tani petani', '6 3']), plantingMethod: find(['metode tanam yang dikembangkan', '6 4']),
-    yieldKg: find(['rata rata hasil panen dalam satu musim panen', 'rata rata hasil dalam satu musim panen', 'rata rata produksi dalam satu musim panen', '8 1 berapa rata rata']),
-    agroecology: find(['tahap mana dalam praktik agroekologi', '6 5']),
-    chemicalFertilizer: find(['masih menggunakan pupuk kimia pada komoditas utama', '7 1']),
-    chemicalPesticide: find(['masih menggunakan pestisida herbisida obat kimia sintetis', '7 2']),
-    organicInput: find(['input agroekologi organik apa saja', '7 3']), seedSource: find(['asal benih bibit klon benur indukan sumber produksi utama', '7 4']),
-    companionPlants: find(['tanaman pendamping penutup tanah refugia', '6 2']), soilWaterConservation: find(['cara merawat konservasi tanah dan air', '7 6']),
-    pestControl: find(['cara utama petani mengendalikan hama', '7 7']), wasteReuse: find(['sisa panen kotoran ternak limbah kebun', '7 8']),
-    bufferProtection: find(['zona pembatas atau upaya perlindungan', '7 9']), ecosystemProtection: find(['praktik yang melindungi ekosistem', '7 10']),
-    agroecologyInterest: find(['tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi', '7 18']),
-    cost: find(['estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim', '8 3 berapa estimasi', 'estimasi biaya', 'biaya untuk tanam']), income: find(['estimasi pendapatan yang diperoleh petani dalam satu masa panen', '8 4 berapa estimasi', 'estimasi pendapatan', 'pendapatan yang diperoleh petani']),
-    recordKeeping: find(['mencatat kegiatan usaha tani', '8 2']), qualityStandards: find(['hasil pertanian saat ini sudah memiliki standar mutu', '8 8']),
-    salesChannel: find(['hasil pertanian biasanya dijual disalurkan', '8 6']), cooperativeSupport: find(['dukungan apa yang paling sering diterima petani dari koperasi', '8 9']), governmentSupport: find(['dukungan apa yang paling sering diterima petani pemerintah', '8 10']), risks: find(['apa 3 risiko atau masalah utama', '9 2']),
-    savingHabit: find(['kebiasaan menabung setelah panen', '8 11']), savingLocation: find(['dimana anda menabung', '8 11 1']), capitalSource: find(['dari mana modal usaha pertanian', '8 12']),
-    certification: find(['produk pertanian saat ini sudah memiliki sertifikat organik', '8 7 apakah produk pertanian']), resultCondition: find(['kondisi hasil usaha utama dibanding sebelumnya', '9 1 dalam 1 tahun']),
-    increasePercentage: find(['persentase peningkatan', '9 1 4']), decreasePercentage: find(['persentase penurunan', '9 1 3']), suggestions: find(['saran atau harapan untuk meningkatan usaha tani', '9 3']),
-    geolocation: findAll(['_geolocation', '11 geotag']),
-    photo: findAll(['foto bersama responden'])
+    id: find(['_id', 'id responden', 'submission id']),
+    surveyDate: find(['start', 'tanggal survei', 'tanggal pendataan', 'waktu submit', 'submission time']),
+    province: find(['1 provinsi', 'provinsi', 'nama provinsi', 'propinsi']),
+    district: districts.length ? districts : findAll(['2 kabupaten', 'kabupaten', 'district']),
+    subdistrict: find(['4 8 kecamatan', 'kecamatan', 'subdistrict']),
+    village: find(['4 9 desa kelurahan', 'desa kelurahan', 'desa', 'kelurahan', 'village']),
+    farmerName: find(['4 1 nama lengkap', 'nama lengkap', 'nama petani', 'nama responden']),
+    enumerator: find(['3 1 nama petugas', 'nama petugas', 'petugas', 'pencacah', 'enumerator']),
+    commodity: find(['5 1 apa komoditas utama yang sedang diusahakan petani saat ini', 'komoditas utama', 'komoditas usaha utama', 'apa komoditas utama', 'nama komoditas utama']),
+    gender: find(['4 4 jenis kelamin', 'jenis kelamin', 'kelamin']), birthDate: find(['4 3 tanggal lahir', 'tanggal lahir', 'ttl']), maritalStatus: find(['4 5 status perkawinan', 'status perkawinan', 'status menikah']),
+    education: find(['4 11 pendidikan terakhir', '_4 11 pendidikan terakhir', 'pendidikan terakhir', 'tingkat pendidikan']), farmerGroup: find(['4 12 nama kelompok tani', 'nama kelompok tani', 'kelompok tani']),
+    youth: find(['apakah anak petani atau pemuda', 'anak petani atau pemuda', 'pemuda petani', 'usia muda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi', 'apakah tergabung sebagai', 'anggota koperasi', '8 11 1 apakah tergabung']),
+    landArea: find(['5 3 berapa luas laha', '5 3 berapa luas lahan komoditas utama m2', 'luas lahan area usaha utama', 'luas area usaha utama', 'luas lahan komoditas utama', 'luas areal']),
+    landStatus: findAll(['5 2 bagaimana status lahan area usaha', 'status lahan area usaha utama', 'status lahan', 'bagaimana status lahan area usaha']),
+    waterSource: find(['apa sumber air utama untuk usa', 'apa sumber air utama untuk usaha', 'sumber air utama untuk usaha tani', 'sumber air utama']),
+    contaminationRisk: find(['sumber risiko pencemaran', 'apakah lahan area usaha', 'risiko pencemaran', 'status lahan']),
+    // Kolom varietas dapat berpindah sesuai komoditas yang dipilih.
+    varieties: findAll(['varietas padi', 'varietas kakao', 'varietas kopi', '5 1 2 varietas kakao', '5 1 1 varietas padi apa', '5 4 varietas kopi', 'varietas']) ,
+    farmingPattern: findAll(['6 3 pola usaha tani petani saat ini paling mendekati yang mana', 'pola usaha tani petani', 'pola usaha tani', '6 3']),
+    plantingMethod: find(['6 4 metode tanam yang dikembangkan', 'metode tanam yang dikembangkan', 'metode tanam', '6 4']),
+    yieldKg: find(['8 1 berapa rata rata hasil panen dalam satu musim panen kg', 'rata rata hasil panen dalam satu musim panen', 'rata rata hasil dalam satu musim panen', 'rata rata produksi dalam satu musim panen', 'hasil panen', 'produksi panen', '8 1 berapa rata rata']),
+    agroecology: find(['6 5 menurut kondisi praktik agroekologi', 'tahap mana dalam praktik agroekologi', 'tahap agroekologi', 'praktik agroekologi', '6 5']),
+    chemicalFertilizer: find(['7 1 dalam 12 bulan t pada komoditas utama', '7 1 dalam 12 bulan terakhir pada komoditas utama', 'masih menggunakan pupuk kimia pada komoditas utama', 'pupuk kimia']),
+    chemicalPesticide: find(['7 2 dalam 12 bulan t obat kimia sintetis', '7 2 dalam 12 bulan terakhir obat kimia sintetis', 'masih menggunakan pestisida herbisida obat kimia sintetis', 'pestisida kimia', 'herbisida']),
+    organicInput: find(['input agroekologi organik apa', 'input organik', 'apakah memakai input organik']),
+    seedSource: find(['7 4 dari mana asal benih bibit', 'asal benih bibit klon benur indukan sumber produksi utama', 'asal benih', 'sumber benih', '7 4']),
+    companionPlants: find(['6 2 selain komoditas sebutkan maksimal 3', 'tanaman pendamping penutup tanah refugia', 'tanaman pendamping', 'refugia', '6 2']),
+    soilWaterConservation: find(['7 6 bagaimana cara merawat konservasi tanah dan air', 'cara merawat konservasi tanah dan air', 'konservasi tanah', 'air dan tanah', '7 6']),
+    pestControl: find(['7 7 bagaimana cara unit gangguan budidaya', 'cara utama petani mengendalikan hama', 'kendali hama', 'cara mengendalikan hama', '7 7']),
+    wasteReuse: find(['7 8 apakah sisa pane dimanfaatkan kembali', 'sisa panen kotoran ternak limbah kebun', 'pengelolaan limbah', 'limbah kebun', '7 8']),
+    bufferProtection: find(['7 9 apakah ada zona r tanaman perangkap', 'zona pembatas atau upaya perlindungan', 'zona pembatas', 'perlindungan ekosistem', '7 9']),
+    ecosystemProtection: find(['7 10 apakah petani melakukan praktik yang melindungi ekosistem sekitar', 'praktik yang melindungi ekosistem', 'melindungi ekosistem', 'ekosistem', '7 10']),
+    agroecologyInterest: find(['7 11 apakah petani tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi', 'tertarik untuk beralih atau mempertahankan praktek pertanian berbasis agroekologi', 'minat agroekologi', 'beralih agroekologi', '7 18']),
+    cost: find(['8 3 berapa estimasi biaya dalam satu musim', 'estimasi biaya untuk tanam dan atau pemeliharaan dalam satu musim', 'estimasi biaya produksi', 'biaya tanam', 'estimasi biaya', 'biaya untuk tanam', '8 3 berapa estimasi']),
+    income: find(['8 4 berapa estimasi pendapatan dalam satu masa panen', 'estimasi pendapatan yang diperoleh petani dalam satu masa panen', 'estimasi pendapatan', 'pendapatan petani', 'pendapatan yang diperoleh petani', '8 4 berapa estimasi']),
+    recordKeeping: find(['8 2 apakah petani men catat kegiatan usaha tani', 'mencatat kegiatan usaha tani', 'catat usaha tani', 'mencatat', '8 2']),
+    qualityStandards: find(['8 8 apakah hasil pertanian memiliki standar mutu', 'hasil pertanian saat ini sudah memiliki standar mutu', 'standar mutu', 'standar kualitas', '8 8']),
+    salesChannel: find(['ke mana hasil utama biasanya d', '8 6 ke mana hasil utama biasanya dijual', 'hasil pertanian biasanya dijual disalurkan', 'saluran pemasaran', 'pemasaran hasil']),
+    cooperativeSupport: find(['8 9 dukungan apa yang paling sering diterima petani dari koperasi', 'dukungan apa yang paling serin', 'dukungan koperasi']),
+    governmentSupport: find(['8 10 dukungan apa yang paling sering diterima petani dari pemerintah', 'dukungan apa yang paling sering diterima petani pemerintah', 'dukungan pemerintah', 'pemerintah', '8 10']),
+    risks: find(['9 2 apa 3 risiko atau masalah utama', 'apa 3 risiko atau masalah utama', 'risiko utama', 'masalah utama', '9 2']),
+    savingHabit: find(['8 11 apakah ada kebiasaan menabung setelah panen', 'kebiasaan menabung setelah panen', 'menabung setelah panen', 'kebiasaan menabung', '8 11']),
+    savingLocation: find(['8 11 1 dimana anda menabung', 'dimana anda menabung', 'lokasi menabung', 'tempat menabung', '8 11 1']),
+    capitalSource: find(['8 12 dari mana modal usaha pertanian saat ini', 'dari mana modal usaha pertanian', 'sumber modal', 'modal usaha', '8 12']),
+    certification: find(['8 7 apakah produk pertanian saat ini sudah memiliki sertifikat organik', 'produk pertanian saat ini sudah memiliki sertifikat organik', 'sertifikat', 'organik', '8 7 apakah produk pertanian']),
+    resultCondition: find(['9 1 dalam 1 tahun musim terakhir', 'kondisi hasil usaha utama dibanding sebelumnya', 'kondisi hasil usaha utama', 'hasil usaha utama', '9 1 dalam 1 tahun']),
+    increasePercentage: find(['9 1 4 berapa persentase peningkatan', 'persentase peningkatan', 'peningkatan persentase', '9 1 4']),
+    decreasePercentage: find(['9 1 3 berapa persentase penurunan', 'persentase penurunan', 'penurunan persentase', '9 1 3']),
+    suggestions: find(['9 3 berikan saran atau harapan untuk usaha tani ke depan', 'saran atau harapan untuk meningkatan usaha tani', 'saran harapan', '9 3']),
+    geolocation: findAll(['_geolocation', 'geotag', 'koordinat', 'gps', '11 geotag']),
+    photo: findAll(['foto bersama responden', 'foto dokumentasi', 'foto absensi', 'foto kegiatan'])
   };
 }
 
@@ -403,7 +456,9 @@ function filterRows_(rows, cols, filters) {
   return rows.filter(function (row) {
     return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
       (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity)) &&
-      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district));
+      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district)) &&
+      (!filters.subdistrict || comparableValue_(valueFor_(row, cols.subdistrict)) === comparableValue_(filters.subdistrict)) &&
+      (!filters.village || comparableValue_(valueFor_(row, cols.village)) === comparableValue_(filters.village));
   });
 }
 
@@ -412,7 +467,9 @@ function filterTableRows_(rows, cols, filters) {
     return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
       (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district)) &&
       (!filters.enumerator || comparableValue_(valueFor_(row, cols.enumerator)) === comparableValue_(filters.enumerator)) &&
-      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity));
+      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity)) &&
+      (!filters.subdistrict || comparableValue_(valueFor_(row, cols.subdistrict)) === comparableValue_(filters.subdistrict)) &&
+      (!filters.village || comparableValue_(valueFor_(row, cols.village)) === comparableValue_(filters.village));
   });
 }
 
@@ -452,13 +509,114 @@ function countByFilled_(rows, column) {
   return countBy_(rows.filter(function (row) { return valueFor_(row, column) !== '' && valueFor_(row, column) != null; }), column);
 }
 
+function normalizeChoiceValue_(value) {
+  if (value === '' || value == null) return '';
+  if (Array.isArray(value)) {
+    var collected = [];
+    value.forEach(function (item) {
+      var normalized = normalizeChoiceValue_(item);
+      if (normalized) collected.push(normalized);
+    });
+    return collected.join(', ');
+  }
+
+  var text = String(value).trim();
+  if (!text) return '';
+
+  var codeMap = {
+    0: 'Tidak',
+    1: 'Ya',
+    2: 'Tidak',
+    10: 'Laki-laki',
+    11: 'Perempuan',
+    20: 'SD/Sederajat',
+    21: 'SMP/Sederajat',
+    22: 'SMA/SMK/Sederajat',
+    23: 'Diploma',
+    24: 'S1',
+    25: 'S2/S3',
+    30: 'Belum Kawin',
+    31: 'Kawin',
+    32: 'Cerai Hidup',
+    33: 'Cerai Mati',
+    40: 'Milik Sendiri',
+    41: 'Sewa/Kontrak',
+    42: 'Bagi Hasil',
+    43: 'Lainnya',
+    50: 'Sumur',
+    51: 'Sungai',
+    52: 'Irigasi',
+    53: 'Hujan',
+    54: 'Lainnya',
+    55: 'Banjir',
+    56: 'Sawah tadah hujan',
+    57: 'Lahan kering',
+    60: 'Pribadi',
+    61: 'Keluarga',
+    62: 'Koperasi',
+    63: 'Bank',
+    64: 'Lainnya'
+  };
+
+  var direct = text.replace(/^\d+\s*[\.\-)]\s*/, '').replace(/^\d+\s*[:\-]\s*/, '').trim();
+  if (direct && !/^\d+(?:[.,]\d+)?$/.test(direct)) {
+    var directLabel = direct.replace(/\s+/g, ' ').trim();
+    if (/^(laki|perempuan|sd|smp|sma|smk|diploma|s1|s2|s3|kawin|cerai|sumur|sungai|irigasi|hujan|milik|sewa|bagi|hasil|bank|koperasi|pribadi|keluarga)/i.test(directLabel)) {
+      return directLabel;
+    }
+    return directLabel;
+  }
+
+  var numeric = Number(text.replace(/[^\d]/g, ''));
+  if (isFinite(numeric) && numeric >= 0 && mathValueExists_(numeric, codeMap)) {
+    return codeMap[numeric];
+  }
+
+  var textLower = text.toLowerCase();
+  if (/laki/i.test(textLower)) return 'Laki-laki';
+  if (/perempuan/i.test(textLower)) return 'Perempuan';
+  if (/sd|sekolah dasar/i.test(textLower)) return 'SD/Sederajat';
+  if (/smp|sekolah menengah pertama/i.test(textLower)) return 'SMP/Sederajat';
+  if (/sma|smk|sekolah menengah atas|menengah kejuruan/i.test(textLower)) return 'SMA/SMK/Sederajat';
+  if (/diploma|akademi/i.test(textLower)) return 'Diploma';
+  if (/s1|sarjana|strata 1/i.test(textLower)) return 'S1';
+  if (/s2|s3|magister|doktor/i.test(textLower)) return 'S2/S3';
+  if (/kawin|nikah/i.test(textLower)) return 'Kawin';
+  if (/belum kawin|belum menikah/i.test(textLower)) return 'Belum Kawin';
+  if (/cerai hidup|cerai/i.test(textLower)) return 'Cerai Hidup';
+  if (/cerai mati/i.test(textLower)) return 'Cerai Mati';
+  if (/milik sendiri|sendiri/i.test(textLower)) return 'Milik Sendiri';
+  if (/sewa|kontrak/i.test(textLower)) return 'Sewa/Kontrak';
+  if (/bagi hasil|hasil bagi/i.test(textLower)) return 'Bagi Hasil';
+  if (/sumur/i.test(textLower)) return 'Sumur';
+  if (/sungai/i.test(textLower)) return 'Sungai';
+  if (/irigasi/i.test(textLower)) return 'Irigasi';
+  if (/hujan/i.test(textLower)) return 'Hujan';
+  if (/bank/i.test(textLower)) return 'Bank';
+  if (/koperasi/i.test(textLower)) return 'Koperasi';
+  if (/pribadi/i.test(textLower)) return 'Pribadi';
+  if (/keluarga/i.test(textLower)) return 'Keluarga';
+
+  return text;
+}
+
+function mathValueExists_(value, map) {
+  return Object.prototype.hasOwnProperty.call(map, Number(value));
+}
+
 function countMultiBy_(rows, column, allowedCode) {
   var count = {};
   rows.forEach(function (row) {
-    String(valueFor_(row, column) || '').split(',').forEach(function (item) {
-      item = item.trim();
-      if (!item || (allowedCode && !allowedCode.test(item))) return;
-      var key = displayValue_(item);
+    var rawValue = valueFor_(row, column);
+    var items = Array.isArray(rawValue) ? rawValue : String(rawValue || '').split(/[;\n,]+/);
+    items.forEach(function (item) {
+      item = String(item || '').trim();
+      if (!item) return;
+      var normalizedItem = normalizeChoiceValue_(item);
+      var itemCode = String(item);
+      var matchedCode = allowedCode ? (allowedCode.test(itemCode) || allowedCode.test(normalizedItem) || /^\d+(?:[.,]\d+)?$/.test(itemCode)) : true;
+      if (!matchedCode) return;
+      var key = displayValue_(normalizedItem);
       if (key) count[key] = (count[key] || 0) + 1;
     });
   });
@@ -473,10 +631,15 @@ function countMultiAcross_(rows, columns, allowedCode) {
   rows.forEach(function (row) {
     columns.forEach(function (column) {
       if (column < 0 || row[column] === '' || row[column] == null) return;
-      String(row[column]).split(',').forEach(function (item) {
-        var itemText = item.trim();
-        if (allowedCode && !allowedCode.test(itemText)) return;
-        var key = displayValue_(itemText);
+      var rawValue = row[column];
+      var items = Array.isArray(rawValue) ? rawValue : String(rawValue).split(/[;\n,]+/);
+      items.forEach(function (item) {
+        var itemText = String(item || '').trim();
+        if (!itemText) return;
+        var normalizedItem = normalizeChoiceValue_(itemText);
+        var matchedCode = allowedCode ? (allowedCode.test(itemText) || allowedCode.test(normalizedItem) || /^\d+(?:[.,]\d+)?$/.test(itemText)) : true;
+        if (!matchedCode) return;
+        var key = displayValue_(normalizedItem);
         if (key) count[key] = (count[key] || 0) + 1;
       });
     });
@@ -606,6 +769,14 @@ function displayValue_(value, asAge) {
     var age = new Date().getFullYear() - value.getFullYear();
     return age >= 0 && age <= 120 ? age + ' tahun' : 'Perlu validasi';
   }
+
+  if (Array.isArray(value)) {
+    return value.map(function (item) { return displayValue_(item); }).filter(function (item) { return item; }).join(', ');
+  }
+
+  var normalized = normalizeChoiceValue_(value);
+  if (normalized && normalized !== String(value).trim()) return normalized;
+
   var text = String(value).replace(/^\d+(?:\.\d+)?\s*/, '').replace(/\s+/g, ' ').trim();
   return text || String(value);
 }

@@ -22,7 +22,7 @@ const buatFormEdit = (initialData: InitialPetani): PetaniForm => ({
   lahanUtama: { ...lahanAwal, ...(initialData.lahanUtama || {}) },
   lahanTambahan: (initialData.lahanTambahan || []).map((land) => ({ ...lahanAwal, ...land })),
 });
-const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500';
+const inputClass = 'w-full mt-1';
 const getPetaniDocumentId = (idPetani: string) => encodeURIComponent(idPetani.trim());
 
 function LahanFields({ title, land, required, onChange, onRecordLocation, recording }: { title: string; land: Lahan; required?: boolean; onChange: (field: keyof Lahan, value: string) => void; onRecordLocation: () => void; recording: boolean }) {
