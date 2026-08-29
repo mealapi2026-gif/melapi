@@ -207,6 +207,7 @@ export default function BaselinePage() {
   const [table, setTable] = useState<SurveyTable | null>(null);
   const [detail, setDetail] = useState<SurveyDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [optionsLoading, setOptionsLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -222,11 +223,14 @@ export default function BaselinePage() {
   ]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const dataRequestRef = useRef(0);
+  const optionsRequestRef = useRef(0);
   const filters = useCallback(
     () => ({ province, district, subdistrict, village, commodity }),
     [province, district, subdistrict, village, commodity],
   );
   const load = useCallback(async () => {
+    const requestId = ++dataRequestRef.current;
     setLoading(true);
     setError("");
     try {
@@ -242,28 +246,38 @@ export default function BaselinePage() {
             pageSize: "20",
           }),
         ]);
+      if (requestId !== dataRequestRef.current) return;
       setDashboard(nextDashboard);
       setAnalytics(nextAnalytics);
       setMapPoints(nextMapPoints);
       setTable(nextTable);
     } catch (cause) {
+      if (requestId !== dataRequestRef.current) return;
       setError(
         cause instanceof Error ? cause.message : "Data Baseline gagal dimuat.",
       );
     } finally {
-      setLoading(false);
+      if (requestId === dataRequestRef.current) setLoading(false);
     }
   }, [filters, page]);
   useEffect(() => {
+    const requestId = ++optionsRequestRef.current;
+    setOptionsLoading(true);
     Promise.resolve().then(async () => {
       try {
-        setOptions(
-          await api<Options>("options", { province, district, subdistrict }),
-        );
+        const nextOptions = await api<Options>("options", {
+          province,
+          district,
+          subdistrict,
+        });
+        if (requestId === optionsRequestRef.current) setOptions(nextOptions);
       } catch (cause) {
+        if (requestId !== optionsRequestRef.current) return;
         setError(
           cause instanceof Error ? cause.message : "Filter gagal dimuat.",
         );
+      } finally {
+        if (requestId === optionsRequestRef.current) setOptionsLoading(false);
       }
     });
   }, [province, district, subdistrict]);
@@ -394,8 +408,11 @@ export default function BaselinePage() {
     ],
   ];
   return (
-    <main className="baseline-report relative mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
-      {loading && <DataLoadingOverlay />}
+    <main
+      className="baseline-report mx-auto max-w-7xl space-y-7 p-5 sm:p-8"
+      aria-busy={loading || optionsLoading}
+    >
+      {(loading || optionsLoading) && <DataLoadingOverlay />}
       <header className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-800 to-emerald-900 p-6 text-white shadow-xl shadow-slate-950/15 sm:flex-row sm:items-center sm:p-8">
         <div>
           <p className="text-xs font-bold tracking-[.2em] text-emerald-200">
@@ -1736,11 +1753,16 @@ function DetailPhotos({
 
 function DataLoadingOverlay() {
   return (
-    <div className="absolute inset-0 z-40 flex min-h-[520px] items-start justify-center rounded-3xl bg-slate-950/35 px-5 pt-32 backdrop-blur-[3px] sm:pt-44">
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-950/35 px-5 pt-28 backdrop-blur-[3px] sm:pt-40"
+      role="status"
+      aria-live="polite"
+      aria-label="Memuat data dashboard"
+    >
       <div className="w-full max-w-sm rounded-3xl border border-white/70 bg-white/95 p-8 text-center shadow-2xl shadow-slate-950/20">
         <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
-          <span className="absolute inset-0 animate-spin rounded-full border-2 border-emerald-100 border-t-emerald-600" />
-          <span className="absolute inset-2 animate-pulse rounded-full bg-emerald-50" />
+          <span className="absolute inset-0 animate-spin rounded-full border-2 border-emerald-100 border-t-emerald-600 motion-reduce:animate-none" />
+          <span className="absolute inset-2 animate-pulse rounded-full bg-emerald-50 motion-reduce:animate-none" />
           <Image
             src={logoSimApi}
             alt="Logo SIM-API"
@@ -1758,7 +1780,7 @@ function DataLoadingOverlay() {
           Dashboard, analitik, dan peta sedang disinkronkan.
         </p>
         <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full w-2/5 animate-pulse rounded-full bg-emerald-500" />
+          <div className="h-full w-2/5 animate-pulse rounded-full bg-emerald-500 motion-reduce:animate-none" />
         </div>
       </div>
     </div>
