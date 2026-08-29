@@ -454,23 +454,42 @@ function resolveColumns_(headers) {
 
 function filterRows_(rows, cols, filters) {
   return rows.filter(function (row) {
-    return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
-      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity)) &&
-      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district)) &&
-      (!filters.subdistrict || comparableValue_(valueFor_(row, cols.subdistrict)) === comparableValue_(filters.subdistrict)) &&
-      (!filters.village || comparableValue_(valueFor_(row, cols.village)) === comparableValue_(filters.village));
+    return matchesFilterValue_(valueFor_(row, cols.province), filters.province) &&
+      matchesFilterValue_(commodityFor_(valueFor_(row, cols.commodity)), filters.commodity) &&
+      matchesFilterValue_(valueFor_(row, cols.district), filters.district) &&
+      matchesFilterValue_(valueFor_(row, cols.subdistrict), filters.subdistrict) &&
+      matchesFilterValue_(valueFor_(row, cols.village), filters.village);
   });
 }
 
 function filterTableRows_(rows, cols, filters) {
   return rows.filter(function (row) {
-    return (!filters.province || comparableValue_(valueFor_(row, cols.province)) === comparableValue_(filters.province)) &&
-      (!filters.district || comparableValue_(valueFor_(row, cols.district)) === comparableValue_(filters.district)) &&
-      (!filters.enumerator || comparableValue_(valueFor_(row, cols.enumerator)) === comparableValue_(filters.enumerator)) &&
-      (!filters.commodity || comparableValue_(commodityFor_(valueFor_(row, cols.commodity))) === comparableValue_(filters.commodity)) &&
-      (!filters.subdistrict || comparableValue_(valueFor_(row, cols.subdistrict)) === comparableValue_(filters.subdistrict)) &&
-      (!filters.village || comparableValue_(valueFor_(row, cols.village)) === comparableValue_(filters.village));
+    return matchesFilterValue_(valueFor_(row, cols.province), filters.province) &&
+      matchesFilterValue_(valueFor_(row, cols.district), filters.district) &&
+      matchesFilterValue_(valueFor_(row, cols.enumerator), filters.enumerator) &&
+      matchesFilterValue_(commodityFor_(valueFor_(row, cols.commodity)), filters.commodity) &&
+      matchesFilterValue_(valueFor_(row, cols.subdistrict), filters.subdistrict) &&
+      matchesFilterValue_(valueFor_(row, cols.village), filters.village);
   });
+}
+
+function matchesFilterValue_(value, filterValue) {
+  if (!filterValue) return true;
+  var left = normalizeFilterText_(value);
+  var right = normalizeFilterText_(filterValue);
+  if (!left || !right) return comparableValue_(displayValue_(value)) === comparableValue_(displayValue_(filterValue));
+  return left === right;
+}
+
+function normalizeFilterText_(value) {
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return '';
+  text = text.replace(/^\d+(?:[\.\-]\d+)*(?:\s*[\.\-)]\s*|\s+)/, '');
+  text = text.replace(/^(?:kab(?:upaten)?|kota|kec(?:amatan)?|desa|kel(?:urahan)?|prov(?:insi)?|prop(?:insi)?)\.?\s+/i, '');
+  text = text.replace(/[_/]+/g, ' ');
+  text = text.replace(/[^a-z0-9\s]/gi, ' ');
+  text = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  return text;
 }
 
 function valueFor_(row, column) {

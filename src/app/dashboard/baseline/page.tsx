@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import Image from "next/image";
 import {
   AlertCircle,
   BarChart3,
@@ -29,6 +30,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import logoSimApi from "../../../../public/images/logo-sim-api.png";
 
 type CountItem = { label: string; value: number };
 type Summary = {
@@ -392,7 +394,8 @@ export default function BaselinePage() {
     ],
   ];
   return (
-    <main className="baseline-report mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
+    <main className="baseline-report relative mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
+      {loading && <DataLoadingOverlay />}
       <header className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-800 to-emerald-900 p-6 text-white shadow-xl shadow-slate-950/15 sm:flex-row sm:items-center sm:p-8">
         <div>
           <p className="text-xs font-bold tracking-[.2em] text-emerald-200">
@@ -1728,6 +1731,37 @@ function DetailPhotos({
         ))}
       </div>
     </section>
+  );
+}
+
+function DataLoadingOverlay() {
+  return (
+    <div className="absolute inset-0 z-40 flex min-h-[520px] items-start justify-center rounded-3xl bg-slate-950/35 px-5 pt-32 backdrop-blur-[3px] sm:pt-44">
+      <div className="w-full max-w-sm rounded-3xl border border-white/70 bg-white/95 p-8 text-center shadow-2xl shadow-slate-950/20">
+        <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
+          <span className="absolute inset-0 animate-spin rounded-full border-2 border-emerald-100 border-t-emerald-600" />
+          <span className="absolute inset-2 animate-pulse rounded-full bg-emerald-50" />
+          <Image
+            src={logoSimApi}
+            alt="Logo SIM-API"
+            className="relative h-14 w-auto object-contain"
+            priority
+          />
+        </div>
+        <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">
+          SIM-API · Baseline
+        </p>
+        <h2 className="mt-2 text-xl font-black text-slate-900">
+          Menyiapkan data Anda
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Dashboard, analitik, dan peta sedang disinkronkan.
+        </p>
+        <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-full w-2/5 animate-pulse rounded-full bg-emerald-500" />
+        </div>
+      </div>
+    </div>
   );
 }
 
