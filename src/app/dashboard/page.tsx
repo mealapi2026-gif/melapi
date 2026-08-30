@@ -11,7 +11,6 @@ type SaggdData = { kpi?: { totalKegiatan?: number; totalPeserta?: number; totalP
 type BaselineData = { kpis?: { respondents?: number; certified?: number; averageLandArea?: number } };
 
 const formatNumber = (value: number) => value.toLocaleString('id-ID');
-const formatMoney = (value: number) => `Rp ${value.toLocaleString('id-ID')}`;
 const recordTime = (value: unknown) => {
 	if (value && typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') return value.toMillis();
 	const parsed = new Date(String(value || '')).getTime();
@@ -36,8 +35,16 @@ export default function DashboardOverview() {
 			['inspeksiICS', setInspections],
 			['dataLahan', setLandSurveys],
 		] as const;
-		const unsubscribers = collections.map(([name, setter]) => onSnapshot(collection(db, name), (snapshot) => setter(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as FirestoreRecord[]), (error) => console.error(`Gagal memuat ${name}:`, error)));
-		setLoading(false);
+		const unsubscribers = collections.map(([name, setter]) =>
+			onSnapshot(
+				collection(db, name),
+				(snapshot) => {
+					setter(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })) as FirestoreRecord[]);
+					setLoading(false);
+				},
+				(error) => console.error(`Gagal memuat ${name}:`, error)
+			)
+		);
 		return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 	}, []);
 
@@ -59,6 +66,7 @@ export default function DashboardOverview() {
 	];
 	const quickLinks = [
 		['/dashboard/appoli', 'Dashboard Appoli', 'Kelola petani, lahan, dan seluruh dokumen', Leaf],
+		['/dashboard/kinerja-enumerator', 'Kinerja Enumerator', 'Pantau kontribusi, volume kerja, dan aktivitas tiap enumerator', Activity],
 		['/dashboard/baseline', 'Baseline', 'Pantau responden dan status sertifikasi', FileText],
 		['/dashboard/saggd', 'SAGGD', 'Analisis kegiatan dan pembiayaan', Activity],
 	] as const;

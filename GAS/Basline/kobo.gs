@@ -482,13 +482,23 @@ function pindahkanFotoDokumentasiBaseline() {
   let processedRows = 0;
   let stoppedForTime = false;
   let stoppedForError = false;
+
   const savedCheckpoint = Number(PropertiesService.getScriptProperties().getProperty(CHECKPOINT_KEY) || 1);
-  const startRow = Math.max(2, savedCheckpoint + 1);
   const totalDataRows = values.length - 1;
+  const currentLastRow = values.length;
+  if (!isFinite(savedCheckpoint) || savedCheckpoint < 1) {
+    PropertiesService.getScriptProperties().setProperty(CHECKPOINT_KEY, "1");
+  } else if (savedCheckpoint > currentLastRow) {
+    PropertiesService.getScriptProperties().deleteProperty(CHECKPOINT_KEY);
+    Logger.log("Checkpoint foto Baseline direset karena data saat ini lebih pendek dari checkpoint lama (checkpoint=" + savedCheckpoint + ", lastRow=" + currentLastRow + ").");
+  }
+
+  const normalizedCheckpoint = Number(PropertiesService.getScriptProperties().getProperty(CHECKPOINT_KEY) || 1);
+  const startRow = Math.max(2, normalizedCheckpoint + 1);
   const firstDataIndex = startRow - 2;
 
   if (firstDataIndex >= totalDataRows) {
-    Logger.log("Tidak ada baris baru. Checkpoint terakhir: baris " + savedCheckpoint + ".");
+    Logger.log("Tidak ada baris baru. Checkpoint terakhir: baris " + normalizedCheckpoint + ".");
     return;
   }
   Logger.log("Mulai pemindahan dari baris " + startRow + " dari total " + (totalDataRows + 1) + " baris.");

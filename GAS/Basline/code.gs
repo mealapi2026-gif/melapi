@@ -71,9 +71,12 @@ function getFilterOptions(filters) {
 function getDashboard(filters) {
   var dataset = readDataset_();
   var rows = filterRows_(dataset.rows, dataset.columns, filters || {});
+  var enumeratorPerformance = buildEnumeratorPerformance_(rows, dataset.columns);
   return {
     total: rows.length,
     kpis: makeKpis_(rows, dataset.columns),
+    enumerators: countBy_(rows, dataset.columns.enumerator),
+    enumeratorPerformance: enumeratorPerformance,
     provinces: countBy_(rows, dataset.columns.province),
     districts: countBy_(rows, dataset.columns.district),
     commodities: countBy_(rows, dataset.columns.commodity, commodityFor_),
@@ -95,11 +98,80 @@ function getDashboard(filters) {
   };
 }
 
+function buildEnumeratorPerformance_(rows, cols) {
+  var groups = {};
+  rows.forEach(function (row) {
+    var rawName = displayValue_(valueFor_(row, cols.enumerator));
+    var name = rawName || 'Tidak diisi';
+    if (!groups[name]) {
+      groups[name] = {
+        name: name,
+        total: 0,
+        latest: null,
+        latestDate: 0,
+        province: 'Belum ada',
+        district: 'Belum ada',
+        commodity: 'Belum ada',
+        provinceCount: {},
+        districtCount: {},
+        commodityCount: {},
+        monthly: {}
+      };
+    }
+    var entry = groups[name];
+    entry.total += 1;
+    var dateValue = dateValue_(valueFor_(row, cols.surveyDate));
+    if (dateValue > entry.latestDate) {
+      entry.latestDate = dateValue;
+      entry.latest = formatDateTime_(valueFor_(row, cols.surveyDate));
+    }
+    var monthKey = monthKey_(valueFor_(row, cols.surveyDate));
+    if (monthKey) {
+      entry.monthly[monthKey] = (entry.monthly[monthKey] || 0) + 1;
+    }
+    var province = displayValue_(valueFor_(row, cols.province)) || 'Tidak diisi';
+    var district = displayValue_(valueFor_(row, cols.district)) || 'Tidak diisi';
+    var commodity = commodityFor_(valueFor_(row, cols.commodity)) || 'Tidak diisi';
+    entry.provinceCount[province] = (entry.provinceCount[province] || 0) + 1;
+    entry.districtCount[district] = (entry.districtCount[district] || 0) + 1;
+    entry.commodityCount[commodity] = (entry.commodityCount[commodity] || 0) + 1;
+    if (entry.provinceCount[province] === 1) entry.province = province;
+    if (entry.districtCount[district] === 1) entry.district = district;
+    if (entry.commodityCount[commodity] === 1) entry.commodity = commodity;
+  });
+
+  return Object.keys(groups).map(function (name) {
+    var item = groups[name];
+    var topProvince = Object.keys(item.provinceCount).sort(function (a, b) { return item.provinceCount[b] - item.provinceCount[a]; })[0] || 'Belum ada';
+    var topDistrict = Object.keys(item.districtCount).sort(function (a, b) { return item.districtCount[b] - item.districtCount[a]; })[0] || 'Belum ada';
+    var topCommodity = Object.keys(item.commodityCount).sort(function (a, b) { return item.commodityCount[b] - item.commodityCount[a]; })[0] || 'Belum ada';
+    var months = Object.keys(item.monthly).sort().map(function (monthKey) { return { month: monthKey, total: item.monthly[monthKey] }; });
+    return {
+      name: item.name,
+      total: item.total,
+      latest: item.latest || '-',
+      province: topProvince,
+      district: topDistrict,
+      commodity: topCommodity,
+      status: item.total > 0 ? 'Aktif' : 'Menunggu',
+      monthly: months
+    };
+  }).sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name); });
+}
+
+function monthKey_(value) {
+  if (!value) return '';
+  var date = Object.prototype.toString.call(value) === '[object Date]' ? value : new Date(value);
+  if (isNaN(date.getTime())) return '';
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM');
+} 
+
 // Ringkasan analitik untuk dashboard Next.js: tren, statistik deskriptif,
 // kualitas data, dan insight otomatis berdasarkan filter yang aktif.
 function getAnalytics(filters) {
   var dataset = readDataset_();
   var cols = dataset.columns;
+  var mappingHealth = columnMappingHealth_(cols);
   var rows = filterRows_(dataset.rows, cols, filters || {});
   var trend = {};
   rows.forEach(function (row) {
@@ -130,6 +202,8 @@ function getAnalytics(filters) {
     trends.length > 1 ? 'Data mencakup ' + trends.length + ' hari pengisian terbaru.' : 'Belum cukup hari pengisian untuk membentuk tren waktu.',
     missingCoordinates ? missingCoordinates + ' respons belum memiliki koordinat valid.' : 'Seluruh respons memiliki koordinat yang valid.'
   ];
+  if (mappingHealth.unresolved.length) insights.push('Pemetaan perlu diperiksa: ' + mappingHealth.unresolved.join(', ') + '.');
+  var resilience = buildResilienceIndex_(rows, cols);
   return {
     trends: trends,
     statistics: { landArea: descriptiveStats_(land), yieldKg: descriptiveStats_(yieldKg) },
@@ -179,10 +253,152 @@ function getAnalytics(filters) {
       missingCoordinates: missingCoordinates, missingIdentity: missingIdentity, validEconomics: validEconomics,
       coordinateCoverage: rows.length ? ((rows.length - missingCoordinates) / rows.length) * 100 : 0,
       certificationRate: rows.length ? (certified / rows.length) * 100 : 0,
-      economicCoverage: rows.length ? (validEconomics / rows.length) * 100 : 0
+      economicCoverage: rows.length ? (validEconomics / rows.length) * 100 : 0,
+      columnMapping: mappingHealth
     },
+    resilience: resilience,
     insights: insights
   };
+}
+
+function buildResilienceIndex_(rows, cols) {
+  if (!rows.length) {
+    return {
+      overall: 0,
+      level: 'Belum ada data',
+      dimensions: [
+        { label: 'Produktivitas', score: 0 },
+        { label: 'Ekonomi', score: 0 },
+        { label: 'Agroekologi', score: 0 },
+        { label: 'Dukungan', score: 0 },
+        { label: 'Risiko', score: 0 }
+      ],
+      distribution: [
+        { label: 'Rentan', value: 0 },
+        { label: 'Cukup', value: 0 },
+        { label: 'Tahan', value: 0 }
+      ],
+      count: 0
+    };
+  }
+
+  // Produktivitas dibandingkan hanya dengan respons komoditas yang sama.
+  // Ini menghindari target tunggal yang tidak adil untuk padi, kakao, dan kopi.
+  var productivityPeers = {};
+  rows.forEach(function (row) {
+    var commodity = commodityFor_(valueFor_(row, cols.commodity));
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
+    if (!isFinite(areaM2) || areaM2 <= 0 || !isFinite(yieldKg) || yieldKg < 0 || !commodity) return;
+    if (!productivityPeers[commodity]) productivityPeers[commodity] = [];
+    productivityPeers[commodity].push(yieldKg / (areaM2 / 10000));
+  });
+
+  var scoreRows = rows.map(function (row) {
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
+    var cost = parseNumber_(valueFor_(row, cols.cost));
+    var income = parseNumber_(valueFor_(row, cols.income));
+    var productivityValue = areaM2 > 0 && isFinite(yieldKg) ? (yieldKg / (areaM2 / 10000)) : 0;
+    var commodity = commodityFor_(valueFor_(row, cols.commodity));
+    var productivityScore = relativeScore_(productivityValue, productivityPeers[commodity] || []);
+    var roiValue = cost > 0 && isFinite(income) ? ((income - cost) / cost) * 100 : 0;
+    // ROI sudah berupa persentase; jangan digabung dengan margin Rupiah.
+    var economyScore = cost > 0 && isFinite(income) ? normalizeScore_(roiValue, -50, 100) : 0;
+
+    var agroecologyChecks = [
+      valueFor_(row, cols.agroecology), valueFor_(row, cols.organicInput), valueFor_(row, cols.seedSource),
+      valueFor_(row, cols.soilWaterConservation), valueFor_(row, cols.pestControl), valueFor_(row, cols.wasteReuse),
+      valueFor_(row, cols.bufferProtection), valueFor_(row, cols.ecosystemProtection), valueFor_(row, cols.agroecologyInterest)
+    ].filter(function (value) { return value !== '' && value != null; });
+    var agroecologyScore = agroecologyChecks.length ?
+      Math.round((agroecologyChecks.filter(hasPositivePractice_).length / agroecologyChecks.length) * 100) : 0;
+
+    var supportSignal = [valueFor_(row, cols.cooperativeSupport), valueFor_(row, cols.governmentSupport), valueFor_(row, cols.farmerGroup)]
+      .filter(hasPositivePractice_);
+    var supportScore = Math.round((supportSignal.length / 3) * 100);
+
+    var riskValue = String(valueFor_(row, cols.risks) || '');
+    var riskScore = riskScore_(riskValue);
+
+    var total = Math.round(0.28 * productivityScore + 0.22 * economyScore + 0.25 * agroecologyScore + 0.15 * supportScore + 0.10 * riskScore);
+    return {
+      total: total,
+      productivity: productivityScore,
+      economy: economyScore,
+      agroecology: agroecologyScore,
+      support: supportScore,
+      risk: riskScore
+    };
+  });
+
+  var overall = average_(scoreRows.map(function (score) { return score.total; }));
+  var dimensions = [
+    { label: 'Produktivitas', score: Math.round(average_(scoreRows.map(function (score) { return score.productivity; }))) },
+    { label: 'Ekonomi', score: Math.round(average_(scoreRows.map(function (score) { return score.economy; }))) },
+    { label: 'Agroekologi', score: Math.round(average_(scoreRows.map(function (score) { return score.agroecology; }))) },
+    { label: 'Dukungan', score: Math.round(average_(scoreRows.map(function (score) { return score.support; }))) },
+    { label: 'Risiko', score: Math.round(average_(scoreRows.map(function (score) { return score.risk; }))) }
+  ];
+  var distribution = [
+    { label: 'Rentan', value: scoreRows.filter(function (score) { return score.total < 40; }).length },
+    { label: 'Cukup', value: scoreRows.filter(function (score) { return score.total >= 40 && score.total < 70; }).length },
+    { label: 'Tahan', value: scoreRows.filter(function (score) { return score.total >= 70; }).length }
+  ];
+
+  return {
+    overall: Math.round(overall),
+    level: overall < 40 ? 'Rentan' : overall < 70 ? 'Cukup' : 'Tahan',
+    dimensions: dimensions,
+    distribution: distribution,
+    count: rows.length
+  };
+}
+
+// Skor 20–80 menurut posisi respons dalam komoditas yang sama. Dengan kurang
+// dari tiga respons pembanding, skor netral dipakai agar hasil tidak menyesatkan.
+function relativeScore_(value, peers) {
+  if (!isFinite(value)) return 0;
+  if (!peers || peers.length < 3) return 50;
+  var rank = peers.filter(function (peer) { return peer <= value; }).length / peers.length;
+  return Math.round(20 + (rank * 60));
+}
+
+function hasPositivePractice_(value) {
+  var text = displayValue_(value).toLowerCase();
+  if (!text) return false;
+  return !/\b(tidak|belum|tidak ada|tidak pernah|none|lainnya)\b/.test(text);
+}
+
+function riskScore_(value) {
+  var text = String(value || '').trim().toLowerCase();
+  if (!text) return 50;
+  if (/\b(tidak ada|tidak|belum ada|tidak pernah)\b/.test(text)) return 100;
+  var riskCount = text.split(/[;\n,]+/).filter(function (item) { return item.trim(); }).length;
+  return Math.max(20, 100 - (Math.max(1, riskCount) * 25));
+}
+
+function columnMappingHealth_(cols) {
+  var required = {
+    id: 'ID respons', surveyDate: 'Tanggal pendataan', province: 'Provinsi', district: 'Kabupaten',
+    farmerName: 'Nama petani', commodity: 'Komoditas', landArea: 'Luas lahan', yieldKg: 'Hasil panen',
+    cost: 'Biaya usaha', income: 'Pendapatan usaha', risks: 'Risiko usaha'
+  };
+  var unresolved = [];
+  Object.keys(required).forEach(function (key) {
+    var column = cols[key];
+    var found = Array.isArray(column) ? column.some(function (item) { return item >= 0; }) : column >= 0;
+    if (!found) unresolved.push(required[key]);
+  });
+  return { unresolved: unresolved, resolved: Object.keys(required).length - unresolved.length, required: Object.keys(required).length };
+}
+
+function normalizeScore_(value, minValue, maxValue) {
+  var numeric = Number(value) || 0;
+  if (!isFinite(numeric)) return 0;
+  var spread = maxValue - minValue;
+  if (spread <= 0) return 100;
+  return Math.max(0, Math.min(100, ((numeric - minValue) / spread) * 100));
 }
 
 function productivityByCommodity_(rows, cols) {
@@ -484,8 +700,9 @@ function matchesFilterValue_(value, filterValue) {
 function normalizeFilterText_(value) {
   var text = String(value == null ? '' : value).trim();
   if (!text) return '';
-  text = text.replace(/^\d+(?:[\.\-]\d+)*(?:\s*[\.\-)]\s*|\s+)/, '');
+  text = text.replace(/^(?:\d+\s*(?:[\.\-)]\s*\d+)*)\s*(?:[\.\-)]\s*)?/g, '');
   text = text.replace(/^(?:kab(?:upaten)?|kota|kec(?:amatan)?|desa|kel(?:urahan)?|prov(?:insi)?|prop(?:insi)?)\.?\s+/i, '');
+  text = text.replace(/^\s*(?:kab|kec|desa|prov)\.?\s+/i, '');
   text = text.replace(/[_/]+/g, ' ');
   text = text.replace(/[^a-z0-9\s]/gi, ' ');
   text = text.replace(/\s+/g, ' ').trim().toLowerCase();

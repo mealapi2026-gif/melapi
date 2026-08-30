@@ -10,6 +10,7 @@ export type MenuKey =
   | 'analisa-usaha'
   | 'inspeksi-ics'
   | 'data-lahan'
+  | 'kinerja-enumerator'
   | 'admin-users';
 
 export type MenuPermission = { read: boolean; write: boolean };
@@ -38,6 +39,7 @@ export const MENU_CONFIG = [
   { key: 'analisa-usaha', label: 'ANALISA USAHA', href: '/dashboard/appoli/analisa-usaha' },
   { key: 'inspeksi-ics', label: 'INSPEKSI ICS', href: '/dashboard/appoli/inspeksi-ics' },
   { key: 'data-lahan', label: 'DATA & LAHAN', href: '/dashboard/appoli/data-lahan' },
+  { key: 'kinerja-enumerator', label: 'KINERJA ENUMERATOR', href: '/dashboard/kinerja-enumerator' },
   { key: 'admin-users', label: 'MANAJEMEN USER', href: '/dashboard/admin/users' },
 ] as const;
 
@@ -46,10 +48,10 @@ const getDefaultAccessibleMenus = (role: 'admin' | 'user'): MenuKey[] => {
     return MENU_CONFIG.map((menu) => menu.key);
   }
 
-  return ['dashboard', 'appoli', 'profil-petani'];
+  return ['dashboard', 'appoli', 'profil-petani', 'kinerja-enumerator'];
 };
 
-export const APPOLI_MENU_KEYS: MenuKey[] = ['appoli', 'profil-petani', 'analisa-usaha', 'inspeksi-ics', 'data-lahan'];
+export const APPOLI_MENU_KEYS: MenuKey[] = ['appoli', 'profil-petani', 'analisa-usaha', 'inspeksi-ics', 'data-lahan', 'kinerja-enumerator'];
 
 export function getMenuPermissions(profile: Pick<UserAccessProfile, 'role' | 'accessibleMenus' | 'menuPermissions'>): MenuPermissions {
   const permissions: MenuPermissions = {};

@@ -6,6 +6,7 @@ import Image from "next/image";
 import {
   AlertCircle,
   BarChart3,
+  ChevronDown,
   Download,
   Loader2,
   MapPinned,
@@ -25,6 +26,11 @@ import {
   LineChart,
   Pie,
   PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -96,6 +102,11 @@ type Analytics = {
     coordinateCoverage?: number;
     certificationRate?: number;
     economicCoverage?: number;
+    columnMapping?: {
+      unresolved?: string[];
+      resolved?: number;
+      required?: number;
+    };
   };
   agroecology?: {
     stage?: CountItem[];
@@ -148,6 +159,12 @@ type Analytics = {
     waterSources?: CountItem[];
   };
   risks?: CountItem[];
+  resilience?: {
+    overall?: number;
+    level?: string;
+    dimensions?: { label: string; score: number }[];
+    distribution?: CountItem[];
+  };
   insights?: string[];
 };
 
@@ -223,6 +240,7 @@ export default function BaselinePage() {
   ]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState("ringkasan");
   const dataRequestRef = useRef(0);
   const optionsRequestRef = useRef(0);
   const filters = useCallback(
@@ -298,6 +316,24 @@ export default function BaselinePage() {
   const quality = analytics?.quality;
   const productivity = analytics?.productivity ?? [];
   const economics = analytics?.economics ?? [];
+  const resilience = analytics?.resilience ?? {
+    overall: 0,
+    level: "Belum ada data",
+    dimensions: [],
+    distribution: [],
+  };
+  const activeFilterCount = [province, district, subdistrict, village, commodity].filter(Boolean).length;
+  const priorityRisk = analytics?.risks?.[0]?.label || "Belum ada risiko terpetakan";
+  const weakestDimensions = [...(resilience.dimensions ?? [])]
+    .sort((left, right) => left.score - right.score)
+    .slice(0, 2)
+    .map((item) => item.label)
+    .join(" dan ") || "data belum lengkap";
+  const dashboardSections = [
+    ["ringkasan", "Ringkasan"], ["profil", "Profil"], ["lahan", "Lahan"],
+    ["komoditas", "Komoditas"], ["budidaya", "Budidaya"], ["usaha", "Usaha"],
+    ["ketahanan", "Ketahanan"], ["tindak-lanjut", "Tindak lanjut"],
+  ];
   const askAssistant = useCallback(
     async (question: string) => {
       const clean = question.trim();
@@ -514,7 +550,58 @@ export default function BaselinePage() {
           Reset filter
         </button>
       </section>
-      <section className="space-y-5">
+      <nav
+        aria-label="Navigasi bagian dashboard"
+        className="-mx-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white px-2 py-2 shadow-sm"
+      >
+        <div className="flex min-w-max items-center gap-1">
+          {dashboardSections.map(([target, label]) => (
+            <button
+              key={target}
+              type="button"
+              onClick={() => setActiveSection(target)}
+              aria-pressed={activeSection === target}
+              className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+                activeSection === target
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+      {activeSection === "ringkasan" && (
+      <section id="ringkasan" className="rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Ringkasan eksekutif</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">Prioritas monitoring berdasarkan filter aktif</h2>
+          </div>
+          <span className="text-sm text-slate-500">{activeFilterCount ? `${activeFilterCount} filter aktif` : "Seluruh respons"}</span>
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          <article className="rounded-2xl border border-white bg-white/90 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Ketahanan usaha</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{number(resilience.overall ?? 0)}</p>
+            <p className="mt-1 text-sm font-semibold text-emerald-700">{resilience.level || "Belum ada data"} · Fokus: {weakestDimensions}</p>
+          </article>
+          <article className="rounded-2xl border border-white bg-white/90 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Risiko prioritas</p>
+            <p className="mt-2 text-base font-bold leading-6 text-slate-900">{priorityRisk}</p>
+            <p className="mt-1 text-sm text-slate-500">Risiko dengan respons terbanyak pada cakupan saat ini.</p>
+          </article>
+          <article className="rounded-2xl border border-white bg-white/90 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kesiapan data</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{number(quality?.economicCoverage ?? 0, 1)}%</p>
+            <p className="mt-1 text-sm text-slate-500">Data ekonomi valid · GPS {number(quality?.coordinateCoverage ?? 0, 1)}%</p>
+          </article>
+        </div>
+      </section>
+      )}
+      {activeSection === "profil" && (
+      <section id="profil" className="space-y-5">
         <CategoryTitle
           number="1"
           title="Profil Petani"
@@ -602,7 +689,9 @@ export default function BaselinePage() {
           </div>
         </article>
       </section>
-      <section className="space-y-5">
+      )}
+      {activeSection === "lahan" && (
+      <section id="lahan" className="space-y-5">
         <CategoryTitle
           number="2"
           title="Informasi Lahan / Unit Usaha"
@@ -658,7 +747,9 @@ export default function BaselinePage() {
           />
         </div>
       </section>
-      <section className="space-y-5">
+      )}
+      {activeSection === "komoditas" && (
+      <section id="komoditas" className="space-y-5">
         <CategoryTitle
           number="3"
           title="Informasi Komoditas"
@@ -732,13 +823,19 @@ export default function BaselinePage() {
           />
         </div>
       </section>
-      <section className="space-y-5">
-        <CategoryTitle
-          number="4"
-          title="Praktik Budidaya & Agroekologi"
-          text="Penggunaan input, pengelolaan lahan dan air, pengendalian hama, perlindungan ekosistem, serta minat menerapkan agroekologi."
-        />
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      )}
+      {activeSection === "budidaya" && (
+      <section id="budidaya">
+        <details className="group rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm">
+          <summary className="flex cursor-pointer list-none items-start justify-between gap-4 marker:content-none">
+            <CategoryTitle
+              number="4"
+              title="Praktik Budidaya & Agroekologi"
+              text="Penggunaan input, pengelolaan lahan dan air, pengendalian hama, perlindungan ekosistem, serta minat menerapkan agroekologi."
+            />
+            <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-slate-500 transition group-open:rotate-180" />
+          </summary>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <Distribution
             title="Input Organik"
             items={analytics?.agroecology?.organicInputs}
@@ -787,15 +884,22 @@ export default function BaselinePage() {
             items={analytics?.agroecology?.agroecologyInterest}
             chart="donut"
           />
-        </div>
+          </div>
+        </details>
       </section>
-      <section className="space-y-5">
-        <CategoryTitle
-          number="5"
-          title="Tata Usaha Tani"
-          text="Hasil panen, pencatatan usaha, biaya-pendapatan, pembiayaan, pemasaran, mutu, sertifikasi, dan dukungan usaha."
-        />
-        <div className="grid gap-5 xl:grid-cols-2">
+      )}
+      {activeSection === "usaha" && (
+      <section id="usaha">
+        <details className="group rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm">
+          <summary className="flex cursor-pointer list-none items-start justify-between gap-4 marker:content-none">
+            <CategoryTitle
+              number="5"
+              title="Tata Usaha Tani"
+              text="Hasil panen, pencatatan usaha, biaya-pendapatan, pembiayaan, pemasaran, mutu, sertifikasi, dan dukungan usaha."
+            />
+            <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-slate-500 transition group-open:rotate-180" />
+          </summary>
+          <div className="mt-5 grid gap-5 xl:grid-cols-2">
           <ChartCard
             title="Biaya dan Pendapatan"
             text="Perbandingan rata-rata per komoditas."
@@ -844,8 +948,8 @@ export default function BaselinePage() {
               />
             </div>
           </article>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <Distribution
             title="Tingkat Literasi Keuangan"
             items={analytics?.financialLiteracy?.levels}
@@ -893,11 +997,212 @@ export default function BaselinePage() {
             items={analytics?.farmManagement?.qualityStandards}
             chart="donut"
           />
-        </div>
+          </div>
+        </details>
       </section>
-      <section className="space-y-5">
+      )}
+      {activeSection === "ketahanan" && (
+      <section id="ketahanan" className="space-y-5">
         <CategoryTitle
           number="6"
+          title="Tingkat Ketahanan Usaha Tani"
+          text="Skor gabungan dari produktivitas, ekonomi, praktik agroekologi, dukungan, dan tingkat risiko usaha yang saat ini terukur."
+        />
+        <div className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr]">
+          <article
+            data-chart
+            className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <SectionTitle
+                title="Profil Ketahanan Usaha Tani"
+                text="Skor 0–100 pada setiap dimensi untuk membaca profil ketahanan usaha secara visual."
+              />
+              <DownloadChartButton title="Profil Ketahanan Usaha Tani" />
+            </div>
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-4xl font-black tracking-tight text-slate-900">
+                  {number(resilience.overall ?? 0)}
+                </p>
+                <p className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                  {resilience.level || "Belum ada data"}
+                </p>
+              </div>
+              <span
+                className={`inline-flex rounded-full px-3 py-1.5 text-xs font-bold ${
+                  (resilience.overall ?? 0) >= 70
+                    ? "bg-emerald-100 text-emerald-700"
+                    : (resilience.overall ?? 0) >= 40
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-rose-100 text-rose-700"
+                }`}
+              >
+                {(resilience.overall ?? 0) >= 70
+                  ? "Tahan"
+                  : (resilience.overall ?? 0) >= 40
+                    ? "Cukup"
+                    : "Rentan"}
+              </span>
+            </div>
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                Status Utama
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-sm text-slate-600">Indeks Ketahanan</span>
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${
+                    (resilience.overall ?? 0) >= 70
+                      ? "bg-emerald-100 text-emerald-700"
+                      : (resilience.overall ?? 0) >= 40
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-rose-100 text-rose-700"
+                  }`}
+                >
+                  {(resilience.overall ?? 0) >= 70
+                    ? "Tahan"
+                    : (resilience.overall ?? 0) >= 40
+                      ? "Cukup"
+                      : "Rentan"}
+                </span>
+              </div>
+            </div>
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart
+                  data={resilience.dimensions ?? []}
+                  outerRadius="70%"
+                  margin={{ top: 20, right: 20, left: 20, bottom: 20 }}
+                >
+                  <PolarGrid stroke="#dfe7ee" />
+                  <PolarAngleAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: "#334155" }}
+                  />
+                  <PolarRadiusAxis
+                    angle={90}
+                    domain={[0, 100]}
+                    tickCount={6}
+                    tickFormatter={(value) => `${value}%`}
+                    tick={{ fontSize: 10, fill: "#475569" }}
+                  />
+                  <Tooltip formatter={(value) => `${number(Number(value), 0)}%`} />
+                  <Radar
+                    name="Ketahanan"
+                    dataKey="score"
+                    stroke={
+                      (resilience.overall ?? 0) >= 70
+                        ? "#10b981"
+                        : (resilience.overall ?? 0) >= 40
+                          ? "#f59e0b"
+                          : "#ef4444"
+                    }
+                    fill={
+                      (resilience.overall ?? 0) >= 70
+                        ? "#10b981"
+                        : (resilience.overall ?? 0) >= 40
+                          ? "#f59e0b"
+                          : "#ef4444"
+                    }
+                    fillOpacity={0.35}
+                    animationDuration={650}
+                  >
+                    <LabelList
+                      dataKey="score"
+                      position="top"
+                      formatter={(value) => {
+                        const numeric = Number(Array.isArray(value) ? value.join("") : value ?? 0);
+                        return `${number(numeric, 0)}%`;
+                      }}
+                      style={{ fill: "#0f172a", fontSize: 10, fontWeight: 700 }}
+                    />
+                  </Radar>
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                Tahan (≥70)
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-amber-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                Cukup (40–69)
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2.5 py-1 text-rose-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                {"Rentan (<40)"}
+              </span>
+            </div>
+            <div className="mt-5 rounded-lg border-l-4 border-slate-300 bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
+                Interpretasi
+              </p>
+              <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-700">
+                <p>
+                  {(resilience.overall ?? 0) >= 70
+                    ? "✓ Wilayah ini memiliki ketahanan usaha tani yang kuat. Sistem produksi, keuangan, dan dukungan sosial sudah solid untuk menghadapi tantangan."
+                    : (resilience.overall ?? 0) >= 40
+                      ? "◐ Ketahanan cukup, namun ada aspek yang perlu diperkuat—terutama dalam produktivitas, akses pasar, atau dukungan kelembagaan."
+                      : "⚠ Ketahanan masih rentan. Diperlukan intervensi khusus pada produktivitas, diversifikasi pendapatan, atau penguatan agroekologi."}
+                </p>
+                <p className="text-slate-600">
+                  {`Fokus pengembangan: `}
+                  {(() => {
+                    const dimensions = [...(resilience.dimensions ?? [])].sort(
+                      (a, b) => (a.score ?? 0) - (b.score ?? 0)
+                    );
+                    const lowest = dimensions.slice(0, 2).map((d) => d.label).join(", ");
+                    return lowest || "data tidak lengkap";
+                  })()}
+                </p>
+              </div>
+            </div>
+          </article>
+          <article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+            <SectionTitle
+              title="Distribusi Tingkat Ketahanan"
+              text="Klasifikasi responden berdasarkan skor gabungan untuk mengidentifikasi kelompok rentan, cukup, dan tahan."
+            />
+            <div className="mt-5 space-y-4">
+              {(resilience.distribution ?? []).map((item) => {
+                const maxValue = Math.max(
+                  1,
+                  ...(resilience.distribution ?? []).map((entry) => entry.value),
+                );
+                const width = `${((item.value ?? 0) / maxValue) * 100}%`;
+                return (
+                  <div key={item.label}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-semibold text-slate-700">{item.label}</span>
+                      <span className="text-slate-500">{number(item.value ?? 0)}</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${
+                          item.label === "Tahan"
+                            ? "bg-emerald-500"
+                            : item.label === "Cukup"
+                              ? "bg-amber-500"
+                              : "bg-rose-500"
+                        }`}
+                        style={{ width }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </article>
+        </div>
+      </section>
+      )}
+      {activeSection === "tindak-lanjut" && (
+        <>
+      <section id="tindak-lanjut" className="space-y-5">
+        <CategoryTitle
+          number="7"
           title="Hasil, Risiko, dan Tindak Lanjut"
           text="Perubahan hasil usaha, risiko utama, saran petani, kualitas data, dan daftar respons untuk proses tindak lanjut."
         />
@@ -928,6 +1233,15 @@ export default function BaselinePage() {
                 label="Saran / harapan terisi"
                 value={number(analytics?.results?.suggestionsCount ?? 0)}
               />
+              <Metric
+                label="Kolom penting belum terbaca"
+                value={number(quality?.columnMapping?.unresolved?.length ?? 0)}
+              />
+              {!!quality?.columnMapping?.unresolved?.length && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                  Periksa header: {quality.columnMapping.unresolved.join(", ")}.
+                </p>
+              )}
             </div>
           </article>
           <article className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 xl:col-span-2">
@@ -1095,6 +1409,8 @@ export default function BaselinePage() {
           </div>
         </section>
       </section>
+        </>
+      )}
       {(detailLoading || detail) && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
           <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">

@@ -15,7 +15,8 @@ import {
   Calculator,
   ClipboardCheck,
   Map,
-  Shield
+  Shield,
+  UsersRound
 } from 'lucide-react';
 import { ReactNode } from 'react';
 import { auth } from '../../../lib/firebase';
@@ -27,6 +28,7 @@ const routeMenuKeys: Array<[string, MenuKey]> = [
   ['/dashboard/appoli/analisa-usaha', 'analisa-usaha'],
   ['/dashboard/appoli/inspeksi-ics', 'inspeksi-ics'],
   ['/dashboard/appoli/data-lahan', 'data-lahan'],
+  ['/dashboard/kinerja-enumerator', 'kinerja-enumerator'],
   ['/dashboard/appoli', 'appoli'],
 ];
 
@@ -100,7 +102,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [pathname, router]);
+  }, [currentMenuKey, pathname, router]);
 
   if (!authReady) {
     return (
@@ -132,6 +134,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     'analisa-usaha': { icon: Calculator, label: 'ANALISA USAHA', href: '/dashboard/appoli/analisa-usaha' },
     'inspeksi-ics': { icon: ClipboardCheck, label: 'INSPEKSI ICS', href: '/dashboard/appoli/inspeksi-ics' },
     'data-lahan': { icon: Map, label: 'DATA & LAHAN', href: '/dashboard/appoli/data-lahan' },
+    'kinerja-enumerator': { icon: UsersRound, label: 'KINERJA ENUMERATOR', href: '/dashboard/kinerja-enumerator' },
     'admin-users': { icon: Shield, label: 'MANAJEMEN USER', href: '/dashboard/admin/users' },
   };
 
