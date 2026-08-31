@@ -1,46 +1,127 @@
 import { NextResponse } from 'next/server'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim()
-const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite'
-const GEMINI_TIMEOUT_MS = 10_000
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash'
+const GEMINI_TIMEOUT_MS = 20_000
+
+type Message = { role: 'user' | 'assistant'; content: string }
 type AssistantPayload = Record<string, unknown> & {
   question?: unknown
+  history?: Message[]
 }
 
 function fallbackAnswer(payload: AssistantPayload, notice?: string) {
   const question = String(payload.question || '').trim()
-  return `${notice ? `${notice}\n\n` : ''}Saya belum dapat menjawab pertanyaan “${question}” dengan andal tanpa respons Gemini. Silakan coba lagi; saya tidak akan mengganti jawaban Anda dengan ringkasan umum yang tidak relevan.`
+  return `${notice ? `${notice}\n\n` : ''}Saya belum dapat menjawab pertanyaan "${question}" dengan andal tanpa respons Gemini. Silakan coba lagi; saya tidak akan mengganti jawaban Anda dengan ringkasan umum yang tidak relevan.`
+}
+
+function extractDashboardSummary(analytics: Record<string, unknown>) {
+  const summary: Record<string, unknown> = {}
+  
+  // KPIs
+  if (analytics.kpis) summary.kpis = analytics.kpis
+  
+  // Quality metrics
+  if (analytics.quality) summary.quality = analytics.quality
+  
+  // Key statistics
+  if (analytics.resilience) summary.resilience = analytics.resilience
+  if (analytics.risks) summary.risks = (analytics.risks as unknown[]).slice(0, 5)
+  
+  // Commodity data
+  if (analytics.commodity) summary.commodity = analytics.commodity
+  
+  // Economics & productivity
+  if (analytics.economics) summary.economics = (analytics.economics as unknown[]).slice(0, 3)
+  if (analytics.productivity) summary.productivity = (analytics.productivity as unknown[]).slice(0, 3)
+  
+  // Trends
+  if (analytics.trends) summary.trends = (analytics.trends as unknown[]).slice(-7)
+  
+  // Monitoring breakdown
+  if (analytics.monitoring) {
+    const monitoring = analytics.monitoring as Record<string, unknown>
+    const total = monitoring.provinces 
+      ? (monitoring.provinces as unknown[]).reduce((sum: number, item: unknown) => 
+          sum + (typeof item === 'object' && item !== null && 'value' in item ? Number((item as Record<string, unknown>).value) : 0), 0)
+      : 0
+    summary.monitoring = {
+      total_responses: total,
+      top_commodities: (monitoring.commodities as unknown[])?.slice(0, 5) ?? [],
+      top_provinces: (monitoring.provinces as unknown[])?.slice(0, 5) ?? [],
+    }
+  }
+  
+  return summary
+}
+
+function buildSystemPrompt() {
+  return `Kamu adalah AI assistant expert untuk monitoring petani organik Indonesia dengan nama "AI Monitoring Expert". 
+
+KEAHLIAN KAMU:
+- Analisis data kuantitatif petani (demografi, lahan, hasil panen, ekonomi)
+- Identifikasi tren dan anomali dalam data monitoring
+- Memberikan rekomendasi strategis berbasis data untuk peningkatan ketahanan usaha tani
+- Memahami konteks pertanian organik dan sertifikasi ICS
+- Expert dalam interpretasi statistik dan KPI pertanian
+
+PRINSIP KOMUNIKASI:
+1. SELALU gunakan data spesifik dari dashboard - jangan generalisasi atau asumsi
+2. Jawab pertanyaan dengan LANGSUNG dan KONKRET - bukan intro panjang
+3. Gunakan bahasa profesional namun tetap aksesbel untuk praktisi lapangan
+4. Untuk setiap claim, sertakan sumber data dan perbandingan (naik/turun berapa %, target vs aktual, dll)
+5. Jika ada insight penting tapi data kurang, katakan "berdasarkan data terbatas, estimasi kami..." bukan "tidak ada data"
+6. Beri rekomendasi actionable - apa, bagaimana, dan mengapa
+
+FORMAT RESPONS (FLEKSIBEL - pilih yang paling sesuai):
+- Jika pertanyaan sederhana: jawab 1-2 paragraf dengan angka spesifik
+- Jika pertanyaan kompleks: buka dengan insight utama, lalu breakdown dengan data, tutup dengan rekomendasi
+- Jika butuh perbandingan: gunakan tabel mental atau poin-poin (jangan tabel ASCII)
+- Jika ada warning/risiko: highlight dengan tegas dan sertakan aksi mitigasi
+
+CONTOH RESPONS YANG POWERFUL:
+❌ "Data menunjukkan 45% responden adalah perempuan"
+✅ "45% responden adalah perempuan (trend naik 12% dari periode lalu), terutama di Boyolali (58%), menunjukkan peluang peningkatan adopsi teknik organik di kelompok perempuan"
+
+JANGAN:
+- Menolak menjawab karena "data kurang"
+- Menjawab di luar konteks monitoring pertani
+- Mengatakan "saya AI jadi..." atau referensi diri yang tidak perlu
+- Format rigid dengan heading yang sama untuk semua pertanyaan
+- Jawab panjang (max 250 kata) kecuali diminta detail mendalam`
 }
 
 function buildPrompt(question: string, payload: Record<string, unknown>) {
   const filters = payload.filters as Record<string, string> | undefined
   const dashboard = payload.dashboard as Record<string, number> | undefined
-  const analytics = payload.analytics as Record<string, unknown> | undefined
-  const compact = JSON.stringify({
-    question,
+  const analyticsRaw = payload.analytics as Record<string, unknown> | undefined
+  const analytics = analyticsRaw ? extractDashboardSummary(analyticsRaw) : {}
+
+  const contextData = {
     filters: filters ?? {},
     dashboard: dashboard ?? {},
     analytics: analytics ?? {},
-  })
+  }
 
-  return `Kamu adalah AI assistant untuk dashboard monitoring petani.
-Gunakan data berikut sebagai sumber utama dan jangan menebak.
-Jawab pertanyaan pengguna secara langsung dalam bahasa Indonesia, ringkas, jelas, dan berbasis angka.
-Hanya gunakan fakta yang relevan dengan pertanyaan; jangan mengganti jawaban dengan ringkasan dashboard umum.
-Jika data untuk menjawab pertanyaan tidak tersedia, katakan dengan jujur data apa yang kurang.
-Gunakan format teks berikut secara persis:
-**Jawaban**
-Jawaban langsung untuk pertanyaan pengguna.
+  return `DATA DASHBOARD SAAT INI:
+${JSON.stringify(contextData, null, 2)}
 
-**Data pendukung**
-- Maksimal tiga fakta yang mendukung jawaban.
+Pertanyaan: "${question}"`
+}
 
-**Langkah berikutnya**
-- Satu tindakan yang relevan, atau tulis “Tidak ada tindak lanjut khusus.”
-Jangan menulis heading dan bullet pada baris yang sama. Jangan gunakan tabel.
+function buildMessages(question: string, payload: Record<string, unknown>, history?: Message[]) {
+  const userHistory = history?.map((msg) => ({
+    role: msg.role as 'user' | 'model',
+    parts: [{ text: msg.content }],
+  })) ?? []
 
-Data dashboard:
-${compact}`
+  return [
+    ...userHistory,
+    {
+      role: 'user' as const,
+      parts: [{ text: buildPrompt(question, payload) }],
+    },
+  ]
 }
 
 export async function POST(request: Request) {
@@ -56,6 +137,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer: fallbackAnswer(payload, 'AI belum terhubung karena GEMINI_API_KEY belum dikonfigurasi.') })
     }
 
+    const messages = buildMessages(question, payload, payload.history as Message[] | undefined)
+
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
@@ -64,13 +147,18 @@ export async function POST(request: Request) {
       },
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       body: JSON.stringify({
-        contents: [{
-          parts: [{ text: buildPrompt(question, payload) }],
-        }],
+        system: buildSystemPrompt(),
+        contents: messages,
         generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 350,
+          temperature: 0.3,
+          maxOutputTokens: 800,
+          topP: 0.9,
+          topK: 40,
         },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+        ],
       }),
     })
 
@@ -80,13 +168,13 @@ export async function POST(request: Request) {
       try {
         const errorData = JSON.parse(errorText) as { error?: { message?: string } }
         providerMessage = errorData.error?.message || errorText
-      } catch { /* Keep the raw response when Gemini does not return JSON. */ }
+      } catch { /* Keep the raw response */ }
       const message = response.status === 503
         ? 'Layanan Gemini sedang sibuk. Silakan coba lagi dalam beberapa saat.'
         : response.status === 429
           ? 'Batas penggunaan Gemini sedang tercapai. Silakan coba lagi nanti.'
           : response.status === 401 || response.status === 403
-            ? 'API key Gemini tidak diterima. Periksa GEMINI_API_KEY di .env.local.'
+            ? 'API key Gemini tidak diterima. Periksa GEMINI_API_KEY di environment.'
             : `Gemini gagal memproses permintaan (${response.status}): ${providerMessage}`
       return NextResponse.json({ error: message }, { status: response.status })
     }
@@ -101,9 +189,10 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
       return NextResponse.json({
-        answer: fallbackAnswer(payload, 'Gemini membutuhkan waktu terlalu lama; berikut ringkasan cepat dari data dashboard.'),
+        answer: fallbackAnswer(payload, 'Gemini membutuhkan waktu terlalu lama.'),
       })
     }
+    console.error('Assistant error:', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Terjadi kesalahan saat meminta AI.' }, { status: 500 })
   }
 }

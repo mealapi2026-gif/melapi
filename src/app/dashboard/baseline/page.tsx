@@ -495,6 +495,7 @@ export default function BaselinePage() {
       setAssistantLoading(true);
       const payload = {
         question: clean,
+        history: assistantMessages.map(msg => ({ role: msg.role, content: msg.content })),
         filters: {
           province: province || "",
           district: district || "",
@@ -521,6 +522,9 @@ export default function BaselinePage() {
           financialLiteracy: analytics?.financialLiteracy ?? {},
           market: analytics?.market ?? {},
           support: analytics?.support ?? {},
+          monitoring: analytics?.monitoring ?? {},
+          trends: analytics?.trends ?? [],
+          statistics: analytics?.statistics ?? {},
         },
       };
       try {
@@ -1875,7 +1879,11 @@ export default function BaselinePage() {
             </div>
             <div className="border-t border-slate-200/80 bg-white p-3.5">
               <div className="mb-3 flex flex-wrap gap-1.5">
-                {["Ringkas data", "Cek anomali", "Rekomendasi"].map((item) => (
+                {[
+                  `Apa risiko utama di ${district || "area ini"}?`,
+                  `Berapa persentase petani ${commodity || "yang"}?`,
+                  "Mana area prioritas intervensi?"
+                ].map((item) => (
                   <button
                     key={item}
                     type="button"
@@ -1899,7 +1907,7 @@ export default function BaselinePage() {
                   placeholder={
                     assistantLoading
                       ? "Menunggu jawaban AI..."
-                      : "Tanya data dashboard..."
+                      : "Tanya apapun tentang data monitoring..."
                   }
                   className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm text-slate-700 outline-none placeholder:text-slate-400 disabled:cursor-wait"
                 />
@@ -2013,33 +2021,63 @@ function renderAssistantInline(text: string) {
 }
 function AssistantAnswer({ content }: { content: string }) {
   const normalized = content
-    .replace(
-      /\s*\*\*(Ringkasan|Fakta utama|Rekomendasi)\*\*\s*/gi,
-      "\n\n**$1**\n",
-    )
-    .replace(/\s+-\s+/g, "\n- ");
+    .split("\n")
+    .map((line) => {
+      // Preserve existing bullet points
+      if (line.trim().startsWith("-")) return line;
+      // Normalize common patterns
+      return line
+        .replace(/^• /, "- ")
+        .replace(/^○ /, "- ");
+    })
+    .join("\n");
+  
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5 text-sm leading-relaxed">
       {normalized.split("\n").map((line, index) => {
         const trimmed = line.trim();
-        if (!trimmed) return <div key={`space-${index}`} className="h-1" />;
-        if (/^\*\*(Ringkasan|Fakta utama|Rekomendasi)\*\*$/i.test(trimmed))
+        if (!trimmed) return <div key={`space-${index}`} className="h-0.5" />;
+        
+        // Numbered headings
+        if (/^#+\s/.test(trimmed)) {
+          const level = trimmed.match(/^#+/)?.[0].length ?? 3;
+          const text = trimmed.replace(/^#+\s/, "");
+          const sizes = ["text-base", "text-sm", "text-xs"];
           return (
             <h4
               key={index}
-              className="pt-1 text-xs font-bold uppercase tracking-wide text-emerald-700"
+              className={`${sizes[Math.min(level - 1, 2)]} font-bold pt-1 text-emerald-700`}
             >
+              {renderAssistantInline(text)}
+            </h4>
+          );
+        }
+        
+        // Bold headers (old format compatibility)
+        if (/^\*\*/.test(trimmed) && /\*\*$/.test(trimmed)) {
+          return (
+            <h4 key={index} className="pt-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
               {renderAssistantInline(trimmed)}
             </h4>
           );
-        if (trimmed.startsWith("- "))
+        }
+        
+        // Bullet points
+        if (trimmed.startsWith("- ")) {
           return (
             <div key={index} className="flex gap-2">
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <p>{renderAssistantInline(trimmed.slice(2))}</p>
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <p className="flex-1">{renderAssistantInline(trimmed.slice(2))}</p>
             </div>
           );
-        return <p key={index}>{renderAssistantInline(trimmed)}</p>;
+        }
+        
+        // Regular paragraph
+        return (
+          <p key={index} className="text-slate-700">
+            {renderAssistantInline(trimmed)}
+          </p>
+        );
       })}
     </div>
   );
