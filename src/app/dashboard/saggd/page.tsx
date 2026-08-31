@@ -89,10 +89,26 @@ const driveFileId = (value: string) => {
 };
 const normalizePhotoList = (value: string | string[] | undefined): string[] => {
   if (!value) return [];
-  const items = Array.isArray(value) ? value : String(value).split(/[\n,;]+/);
-  return items
+
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value)
+        .replace(/\[|\]/g, '')
+        .replace(/['"]/g, '')
+        .split(/[\r\n,;]+/);
+
+  return rawItems
+    .flatMap((item) => String(item).split(/\s+/).filter(Boolean))
     .map((item) => String(item).trim())
-    .filter((item) => item && (item.startsWith('http://') || item.startsWith('https://')))
+    .filter((item) =>
+      item && (
+        item.startsWith('http://') ||
+        item.startsWith('https://') ||
+        item.includes('drive.google.com') ||
+        item.includes('googleusercontent.com') ||
+        item.includes('photos.app.goo.gl')
+      )
+    )
     .filter((item, index, array) => array.indexOf(item) === index);
 };
 const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({
@@ -547,30 +563,37 @@ function ActivityDetailModal({
           </DetailGroup>
           <div className="md:col-span-2"><DetailGroup title="Hasil kegiatan"><p className="whitespace-pre-line text-sm leading-6 text-slate-600">{activity.hasil || '-'}</p></DetailGroup></div>
           <div className="md:col-span-2"><DetailGroup title="Dokumentasi">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-5">
               {(() => {
                 const fotoKegiatanList = normalizePhotoList(activity.fotoKegiatan);
                 const fotoAbsensiList = normalizePhotoList(activity.fotoAbsensi);
+                const hasPhotos = fotoKegiatanList.length > 0 || fotoAbsensiList.length > 0;
+
+                if (!hasPhotos) {
+                  return <span className="text-sm text-slate-400">Tidak ada dokumentasi.</span>;
+                }
+
                 return (
                   <>
                     {fotoKegiatanList.length > 0 && (
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Foto kegiatan</p>
-                        {fotoKegiatanList.map((url, index) => (
-                          <PhotoPreview key={`${url}-${index}`} label={`Foto kegiatan ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
-                        ))}
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {fotoKegiatanList.map((url, index) => (
+                            <PhotoPreview key={`${url}-${index}`} label={`Foto kegiatan ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
+                          ))}
+                        </div>
                       </div>
                     )}
                     {fotoAbsensiList.length > 0 && (
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Foto absensi</p>
-                        {fotoAbsensiList.map((url, index) => (
-                          <PhotoPreview key={`${url}-${index}`} label={`Foto absensi ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
-                        ))}
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {fotoAbsensiList.map((url, index) => (
+                            <PhotoPreview key={`${url}-${index}`} label={`Foto absensi ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
+                          ))}
+                        </div>
                       </div>
-                    )}
-                    {fotoKegiatanList.length === 0 && fotoAbsensiList.length === 0 && (
-                      <span className="text-sm text-slate-400">Tidak ada dokumentasi.</span>
                     )}
                   </>
                 );

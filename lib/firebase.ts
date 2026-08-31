@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 
 // Pola ini mencegah inisialisasi ganda saat Next.js melakukan hot-reloading
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 

@@ -756,15 +756,18 @@ export default function BaselinePage() {
             <p className="mt-1 text-sm text-slate-500">Data ekonomi valid · GPS {number(quality?.coordinateCoverage ?? 0, 1)}%</p>
           </article>
         </div>
-        <article className="mt-5 overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
+        <article data-chart className="mt-5 overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-white p-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Progres responden / sampel per kabupaten</p>
               <p className="mt-1 text-sm text-slate-500">Respons aktual dibanding target sampel pendataan.</p>
             </div>
-            <span className={`rounded-full px-3 py-1.5 text-xs font-black ${sampleProgress >= 100 ? "bg-emerald-600 text-white" : "bg-sky-100 text-sky-800"}`}>
-              {number(sampleProgress, 1)}% capaian total
-            </span>
+            <div className="flex items-center gap-2">
+              <DownloadChartButton title="Progres responden / sampel per kabupaten" />
+              <span className={`rounded-full px-3 py-1.5 text-xs font-black ${sampleProgress >= 100 ? "bg-emerald-600 text-white" : "bg-sky-100 text-sky-800"}`}>
+                {number(sampleProgress, 1)}% capaian total
+              </span>
+            </div>
           </div>
           <div className="grid gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-2 xl:grid-cols-4">
             <div className="bg-white px-5 py-4">
