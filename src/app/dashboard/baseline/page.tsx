@@ -211,6 +211,7 @@ const money = (value: number) => `Rp${number(value)}`;
 const sampleTargets: SampleTarget[] = [
   { district: "Luwu Utara", target: 225, sources: ["luwu utara"] },
   { district: "Luwu Timur", target: 103, sources: ["luwu timur"] },
+  { district: "Blitar", target: 119, sources: ["blitar"] },
   { district: "Enrekang", target: 92, sources: ["enrekang"] },
   { district: "Polewali Mandar", target: 143, sources: ["polewali mandar"] },
   { district: "Toraja Utara", target: 120, sources: ["toraja utara", "toraja"] },
