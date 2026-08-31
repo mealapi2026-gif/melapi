@@ -2010,74 +2010,155 @@ function CategoryTitle({
 }
 function renderAssistantInline(text: string) {
   return text
-    .split(/(\*\*[^*]+\*\*)/g)
-    .map((part, index) =>
-      part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
-      ) : (
-        part
-      ),
-    );
+    .split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={`bold-${index}`} className="font-bold text-slate-900">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("*") && part.endsWith("*") && !part.startsWith("**")) {
+        return (
+          <em key={`italic-${index}`} className="italic text-slate-800">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return (
+          <code
+            key={`code-${index}`}
+            className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-emerald-700"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      return (
+        <span key={`text-${index}`}>
+          {part
+            .split(/(\d+%|\d+(?:,\d{3})*(?:\.\d+)?)/g)
+            .map((segment, idx) =>
+              /^\d/.test(segment) ? (
+                <span
+                  key={`num-${idx}`}
+                  className="font-semibold text-emerald-700"
+                >
+                  {segment}
+                </span>
+              ) : (
+                segment
+              ),
+            )}
+        </span>
+      );
+    });
 }
 function AssistantAnswer({ content }: { content: string }) {
-  const normalized = content
-    .split("\n")
-    .map((line) => {
-      // Preserve existing bullet points
-      if (line.trim().startsWith("-")) return line;
-      // Normalize common patterns
-      return line
-        .replace(/^• /, "- ")
-        .replace(/^○ /, "- ");
-    })
-    .join("\n");
-  
+  type BlockType = { type: string; lines: string[] };
+  const blocks: Array<{ type: string; content: string }> = [];
+  let currentBlock: BlockType | null = null;
+
+  const flushBlock = (block: BlockType | null) => {
+    if (block && block.type && block.lines) {
+      blocks.push({
+        type: block.type,
+        content: block.lines.join("\n"),
+      });
+    }
+  };
+
+  content.split("\n").forEach((line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushBlock(currentBlock);
+      currentBlock = null;
+      return;
+    }
+
+    if (/^#{1,3}\s/.test(trimmed)) {
+      flushBlock(currentBlock);
+      blocks.push({ type: "heading", content: trimmed });
+      currentBlock = null;
+    } else if (/^\*\*[^*]+\*\*$/.test(trimmed)) {
+      flushBlock(currentBlock);
+      blocks.push({ type: "heading", content: trimmed });
+      currentBlock = null;
+    } else if (trimmed.startsWith("-")) {
+      if (currentBlock?.type !== "list") {
+        flushBlock(currentBlock);
+        currentBlock = { type: "list", lines: [] };
+      }
+      currentBlock?.lines.push(trimmed);
+    } else {
+      if (currentBlock?.type !== "paragraph") {
+        flushBlock(currentBlock);
+        currentBlock = { type: "paragraph", lines: [] };
+      }
+      currentBlock?.lines.push(trimmed);
+    }
+  });
+
+  flushBlock(currentBlock);
+
   return (
-    <div className="space-y-1.5 text-sm leading-relaxed">
-      {normalized.split("\n").map((line, index) => {
-        const trimmed = line.trim();
-        if (!trimmed) return <div key={`space-${index}`} className="h-0.5" />;
-        
-        // Numbered headings
-        if (/^#+\s/.test(trimmed)) {
-          const level = trimmed.match(/^#+/)?.[0].length ?? 3;
-          const text = trimmed.replace(/^#+\s/, "");
-          const sizes = ["text-base", "text-sm", "text-xs"];
+    <div className="space-y-3">
+      {blocks.map((block, idx) => {
+        if (block.type === "heading") {
+          const text = block.content.replace(/^#+\s/, "").replace(/\*\*/g, "");
           return (
-            <h4
-              key={index}
-              className={`${sizes[Math.min(level - 1, 2)]} font-bold pt-1 text-emerald-700`}
-            >
-              {renderAssistantInline(text)}
-            </h4>
-          );
-        }
-        
-        // Bold headers (old format compatibility)
-        if (/^\*\*/.test(trimmed) && /\*\*$/.test(trimmed)) {
-          return (
-            <h4 key={index} className="pt-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
-              {renderAssistantInline(trimmed)}
-            </h4>
-          );
-        }
-        
-        // Bullet points
-        if (trimmed.startsWith("- ")) {
-          return (
-            <div key={index} className="flex gap-2">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <p className="flex-1">{renderAssistantInline(trimmed.slice(2))}</p>
+            <div key={idx} className="mt-3 mb-2 first:mt-0">
+              <h4 className="text-sm font-bold text-emerald-700 uppercase tracking-wider">
+                {renderAssistantInline(text)}
+              </h4>
+              <div className="mt-1 h-0.5 bg-gradient-to-r from-emerald-200 to-transparent" />
             </div>
           );
         }
-        
-        // Regular paragraph
-        return (
-          <p key={index} className="text-slate-700">
-            {renderAssistantInline(trimmed)}
-          </p>
-        );
+
+        if (block.type === "list") {
+          const items = block.content
+            .split("\n")
+            .filter((line) => line.trim().startsWith("-"))
+            .map((line) => line.trim().slice(1).trim());
+
+          return (
+            <ul key={idx} className="space-y-1.5 ml-1">
+              {items.map((item, itemIdx) => (
+                <li key={itemIdx} className="flex gap-2.5">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 shadow-sm" />
+                  <span className="flex-1 text-sm leading-relaxed text-slate-700">
+                    {renderAssistantInline(item)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        if (block.type === "paragraph") {
+          const paragraphs = block.content
+            .split(/\n(?=\S)/)
+            .map((p) => p.trim());
+
+          return (
+            <div key={idx} className="space-y-2">
+              {paragraphs.map((para, pIdx) => (
+                <p
+                  key={pIdx}
+                  className="text-sm leading-relaxed text-slate-700"
+                >
+                  {renderAssistantInline(para)}
+                </p>
+              ))}
+            </div>
+          );
+        }
+
+        return null;
       })}
     </div>
   );
