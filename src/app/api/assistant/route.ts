@@ -38,18 +38,40 @@ function extractDashboardSummary(analytics: Record<string, unknown>) {
   // Trends
   if (analytics.trends) summary.trends = (analytics.trends as unknown[]).slice(-7)
   
-  // Monitoring breakdown
+  // Monitoring breakdown - INCLUDING DEMOGRAPHICS
   if (analytics.monitoring) {
     const monitoring = analytics.monitoring as Record<string, unknown>
     const total = monitoring.provinces 
       ? (monitoring.provinces as unknown[]).reduce((sum: number, item: unknown) => 
           sum + (typeof item === 'object' && item !== null && 'value' in item ? Number((item as Record<string, unknown>).value) : 0), 0)
       : 0
+    
     summary.monitoring = {
       total_responses: total,
-      top_commodities: (monitoring.commodities as unknown[])?.slice(0, 5) ?? [],
+      // Demographics
+      ageGroups: monitoring.ageGroups ?? [],
+      gender: monitoring.gender ?? [],
+      education: monitoring.education ?? [],
+      youth: monitoring.youth ?? [],
+      // Geography
       top_provinces: (monitoring.provinces as unknown[])?.slice(0, 5) ?? [],
+      top_districts: (monitoring.districts as unknown[])?.slice(0, 5) ?? [],
+      top_subdistricts: (monitoring.subdistricts as unknown[])?.slice(0, 5) ?? [],
+      top_villages: (monitoring.villages as unknown[])?.slice(0, 5) ?? [],
+      // Land
+      landStatus: monitoring.landStatus ?? [],
+      waterSources: monitoring.waterSources ?? [],
     }
+  }
+  
+  // Profile data
+  if (analytics.profile) {
+    summary.profile = analytics.profile
+  }
+  
+  // Land risks
+  if (analytics.land) {
+    summary.land = analytics.land
   }
   
   return summary
@@ -59,11 +81,20 @@ function buildSystemPrompt() {
   return `Kamu adalah AI assistant expert untuk monitoring petani organik Indonesia dengan nama "AI Monitoring Expert". 
 
 KEAHLIAN KAMU:
-- Analisis data kuantitatif petani (demografi, lahan, hasil panen, ekonomi)
+- Analisis data kuantitatif petani: demografi (umur, gender, pendidikan, pemuda), lahan, hasil panen, ekonomi
+- Analisis pola demografis: perbandingan umur, gender, pendidikan, status perkawinan, keanggotaan koperasi
 - Identifikasi tren dan anomali dalam data monitoring
 - Memberikan rekomendasi strategis berbasis data untuk peningkatan ketahanan usaha tani
 - Memahami konteks pertanian organik dan sertifikasi ICS
 - Expert dalam interpretasi statistik dan KPI pertanian
+
+DATA DEMOGRAFIS YANG SELALU TERSEDIA:
+- ageGroups: Distribusi kelompok umur (contoh: 18-25, 26-35, 36-50, dst)
+- gender: Profil gender (laki-laki/perempuan)
+- education: Pendidikan terakhir (SD, SMP, SMA, Diploma, S1, dst)
+- youth: Keterlibatan pemuda
+- maritalStatus: Status perkawinan
+- cooperativeMembership: Keanggotaan koperasi
 
 PRINSIP KOMUNIKASI:
 1. SELALU gunakan data spesifik dari dashboard - jangan generalisasi atau asumsi
