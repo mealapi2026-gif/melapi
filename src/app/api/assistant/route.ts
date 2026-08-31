@@ -110,18 +110,31 @@ Pertanyaan: "${question}"`
 }
 
 function buildMessages(question: string, payload: Record<string, unknown>, history?: Message[]) {
-  const userHistory = history?.map((msg) => ({
+  const systemPrompt = buildSystemPrompt()
+  
+  // If no history, include system prompt with first question
+  if (!history || history.length === 0) {
+    return [
+      {
+        role: 'user' as const,
+        parts: [{ text: `${systemPrompt}\n\n${buildPrompt(question, payload)}` }],
+      },
+    ]
+  }
+  
+  // With history, reconstruct conversation
+  const messages = history.map((msg) => ({
     role: msg.role as 'user' | 'model',
     parts: [{ text: msg.content }],
-  })) ?? []
-
-  return [
-    ...userHistory,
-    {
-      role: 'user' as const,
-      parts: [{ text: buildPrompt(question, payload) }],
-    },
-  ]
+  }))
+  
+  // Add new question
+  messages.push({
+    role: 'user' as const,
+    parts: [{ text: buildPrompt(question, payload) }],
+  })
+  
+  return messages
 }
 
 export async function POST(request: Request) {
@@ -137,7 +150,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer: fallbackAnswer(payload, 'AI belum terhubung karena GEMINI_API_KEY belum dikonfigurasi.') })
     }
 
-    const messages = buildMessages(question, payload, payload.history as Message[] | undefined)
+    const history = payload.history as Message[] | undefined
+    const messages = buildMessages(question, payload, history)
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
@@ -147,7 +161,6 @@ export async function POST(request: Request) {
       },
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       body: JSON.stringify({
-        system: buildSystemPrompt(),
         contents: messages,
         generationConfig: {
           temperature: 0.3,
