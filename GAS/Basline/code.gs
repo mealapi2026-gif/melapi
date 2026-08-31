@@ -204,6 +204,7 @@ function getAnalytics(filters) {
   ];
   if (mappingHealth.unresolved.length) insights.push('Pemetaan perlu diperiksa: ' + mappingHealth.unresolved.join(', ') + '.');
   var resilience = buildResilienceIndex_(rows, cols);
+  var interventionPriorities = buildInterventionPriorities_(rows, cols);
   return {
     trends: trends,
     statistics: { landArea: descriptiveStats_(land), yieldKg: descriptiveStats_(yieldKg) },
@@ -245,7 +246,7 @@ function getAnalytics(filters) {
     monitoring: {
       provinces: countBy_(rows, cols.province), districts: countBy_(rows, cols.district),
       subdistricts: countBy_(rows, cols.subdistrict), villages: countBy_(rows, cols.village),
-      commodities: commodity, gender: countBy_(rows, cols.gender), education: countBy_(rows, cols.education), youth: countBy_(rows, cols.youth),
+      commodities: commodity, gender: countBy_(rows, cols.gender), ageGroups: ageDistribution_(rows, cols), education: countBy_(rows, cols.education), youth: countBy_(rows, cols.youth),
       landStatus: countMultiAcross_(rows, cols.landStatus, /^5\.2\./), waterSources: countMultiBy_(rows, cols.waterSource, /^5\.4\./)
     },
     quality: {
@@ -257,8 +258,95 @@ function getAnalytics(filters) {
       columnMapping: mappingHealth
     },
     resilience: resilience,
+    interventionPriorities: interventionPriorities,
     insights: insights
   };
+}
+
+// Skor prioritas 0â€“100: semakin tinggi, semakin mendesak intervensi.
+// Ini adalah alat pemeringkatan berbasis data survei, bukan prediksi hasil panen.
+function buildInterventionPriorities_(rows, cols) {
+  var productivityPeers = {};
+  rows.forEach(function (row) {
+    var commodity = commodityFor_(valueFor_(row, cols.commodity));
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
+    if (!commodity || !isFinite(areaM2) || areaM2 <= 0 || !isFinite(yieldKg) || yieldKg < 0) return;
+    if (!productivityPeers[commodity]) productivityPeers[commodity] = [];
+    productivityPeers[commodity].push(yieldKg / (areaM2 / 10000));
+  });
+
+  var groups = {};
+  rows.forEach(function (row) {
+    var village = displayValue_(valueFor_(row, cols.village));
+    var district = displayValue_(valueFor_(row, cols.district));
+    var province = displayValue_(valueFor_(row, cols.province));
+    var location = village || district || province || 'Wilayah belum teridentifikasi';
+    var key = [province, district, village || location].join('|');
+    if (!groups[key]) groups[key] = {
+      location: location,
+      province: province || 'Tidak diisi',
+      district: district || 'Tidak diisi',
+      village: village || '',
+      scores: { risk: [], productivity: [], economy: [], agroecology: [], quality: [] }
+    };
+
+    var areaM2 = parseNumber_(valueFor_(row, cols.landArea));
+    var yieldKg = parseNumber_(valueFor_(row, cols.yieldKg));
+    var commodity = commodityFor_(valueFor_(row, cols.commodity));
+    var productivity = areaM2 > 0 && isFinite(yieldKg) ? yieldKg / (areaM2 / 10000) : NaN;
+    var productivityScore = isFinite(productivity) ? relativeScore_(productivity, productivityPeers[commodity] || []) : 0;
+    var cost = parseNumber_(valueFor_(row, cols.cost));
+    var income = parseNumber_(valueFor_(row, cols.income));
+    var roi = cost > 0 && isFinite(income) ? ((income - cost) / cost) * 100 : NaN;
+    var agroecologyChecks = [
+      valueFor_(row, cols.agroecology), valueFor_(row, cols.organicInput), valueFor_(row, cols.seedSource),
+      valueFor_(row, cols.soilWaterConservation), valueFor_(row, cols.pestControl), valueFor_(row, cols.wasteReuse),
+      valueFor_(row, cols.bufferProtection), valueFor_(row, cols.ecosystemProtection)
+    ].filter(function (value) { return value !== '' && value != null; });
+    var agroecologyScore = agroecologyChecks.length ?
+      (agroecologyChecks.filter(hasPositivePractice_).length / agroecologyChecks.length) * 100 : 0;
+    var missingCoordinates = !parseLocation_(valueFor_(row, cols.geolocation));
+    var missingIdentity = !valueFor_(row, cols.farmerName) || !valueFor_(row, cols.commodity);
+    var group = groups[key];
+    group.scores.risk.push(100 - riskScore_(valueFor_(row, cols.risks)));
+    group.scores.productivity.push(100 - productivityScore);
+    group.scores.economy.push(isFinite(roi) ? 100 - normalizeScore_(roi, -50, 100) : 70);
+    group.scores.agroecology.push(100 - agroecologyScore);
+    group.scores.quality.push((missingCoordinates || missingIdentity) ? 100 : 0);
+  });
+
+  return Object.keys(groups).map(function (key) {
+    var group = groups[key];
+    var factors = [
+      { label: 'Risiko usaha', score: average_(group.scores.risk), recommendation: 'Lakukan verifikasi risiko utama dan susun pendampingan mitigasi.' },
+      { label: 'Produktivitas', score: average_(group.scores.productivity), recommendation: 'Tinjau praktik budidaya dan lakukan pendampingan produktivitas per komoditas.' },
+      { label: 'Ekonomi usaha', score: average_(group.scores.economy), recommendation: 'Tinjau biaya, harga jual, dan akses pembiayaan usaha tani.' },
+      { label: 'Praktik agroekologi', score: average_(group.scores.agroecology), recommendation: 'Prioritaskan pelatihan praktik agroekologi yang masih belum diterapkan.' },
+      { label: 'Kualitas data', score: average_(group.scores.quality), recommendation: 'Lengkapi identitas atau koordinat GPS sebelum keputusan program dibuat.' }
+    ];
+    factors.sort(function (left, right) { return right.score - left.score; });
+    var priority = Math.round(
+      0.25 * average_(group.scores.risk) +
+      0.20 * average_(group.scores.productivity) +
+      0.20 * average_(group.scores.economy) +
+      0.15 * average_(group.scores.agroecology) +
+      0.20 * average_(group.scores.quality)
+    );
+    return {
+      location: group.location,
+      province: group.province,
+      district: group.district,
+      village: group.village,
+      respondents: group.scores.risk.length,
+      score: priority,
+      level: priority >= 70 ? 'Sangat tinggi' : priority >= 50 ? 'Tinggi' : priority >= 30 ? 'Sedang' : 'Rendah',
+      reasons: factors.slice(0, 2).map(function (factor) { return factor.label; }),
+      recommendation: factors[0].recommendation
+    };
+  }).sort(function (left, right) {
+    return right.score - left.score || right.respondents - left.respondents || left.location.localeCompare(right.location);
+  }).slice(0, 10);
 }
 
 function buildResilienceIndex_(rows, cols) {
@@ -514,7 +602,7 @@ function getTable(filters, page, pageSize) {
   var cols = dataset.columns;
   var fields = [
     ['Tanggal pendataan', cols.surveyDate], ['Nama petani', cols.farmerName], ['Provinsi', cols.province], ['Kabupaten', cols.district],
-    ['Jenis kelamin', cols.gender], ['Usia', cols.birthDate], ['Pendidikan', cols.education],
+    ['Jenis kelamin', cols.gender], ['Umur', null], ['Pendidikan', cols.education],
     ['Kelompok tani', cols.farmerGroup], ['Komoditas utama', cols.commodity]
   ];
   var start = page * pageSize;
@@ -523,7 +611,8 @@ function getTable(filters, page, pageSize) {
     rows: rows.slice(start, start + pageSize).map(function (row) {
       return { id: String(valueFor_(row, cols.id)), cells: fields.map(function (field) {
         if (field[1] === cols.surveyDate) return formatDateTime_(valueFor_(row, field[1]));
-        return displayValue_(valueFor_(row, field[1]), field[1] === cols.birthDate);
+        if (field[0] === 'Umur') return ageFor_(row, cols);
+        return displayValue_(valueFor_(row, field[1]));
       }).concat([dataset.duplicateIds[String(valueFor_(row, cols.id))] > 1 ? 'Duplikat: ' + dataset.duplicateIds[String(valueFor_(row, cols.id))] + ' baris' : 'Respons unik']) };
     }), total: rows.length, page: page, pageSize: pageSize, showingDuplicates: Boolean(filters.showDuplicates)
   };
@@ -543,8 +632,18 @@ function getSurveyDetail(id) {
       if (photoId) photos.push({ label: prettyHeader_(header), fileId: photoId });
       return;
     }
-    fields.push({ label: prettyHeader_(header), value: displayValue_(value, index === dataset.columns.birthDate) });
+    if (index === dataset.columns.age) {
+      fields.push({ label: 'Umur', value: ageFor_(record, dataset.columns) });
+      return;
+    }
+    fields.push({ label: prettyHeader_(header), value: displayValue_(value) });
   });
+  // Form lama hanya menyimpan tanggal lahir. Tetap tampilkan umur terhitung
+  // tanpa mengubah nilai tanggal lahir yang asli.
+  if (dataset.columns.age < 0) {
+    var calculatedAge = ageFor_(record, dataset.columns);
+    if (calculatedAge) fields.push({ label: 'Umur', value: calculatedAge });
+  }
   return { farmerName: displayValue_(valueFor_(record, dataset.columns.farmerName)), enumerator: displayValue_(valueFor_(record, dataset.columns.enumerator)), fields: fields, photos: photos };
 }
 
@@ -609,10 +708,21 @@ function resolveColumns_(headers) {
     });
     return matches;
   }
+  function findExact(patterns) {
+    for (var p = 0; p < patterns.length; p++) {
+      var candidate = normalized(patterns[p]);
+      for (var i = 0; i < headers.length; i++) {
+        if (normalized(headers[i]) === candidate) return i;
+      }
+    }
+    return -1;
+  }
   var districts = [];
   headers.forEach(function (header, index) {
     if (/kabupaten/i.test(normalized(header))) districts.push(index);
   });
+  var age = find(['4 3 umur', '4 3 usia', 'umur responden', 'usia responden', 'umur petani', 'usia petani', 'umur tahun', 'usia tahun']);
+  if (age < 0) age = findExact(['umur', 'usia']);
   return {
     id: find(['_id', 'id responden', 'submission id']),
     surveyDate: find(['start', 'tanggal survei', 'tanggal pendataan', 'waktu submit', 'submission time']),
@@ -623,7 +733,7 @@ function resolveColumns_(headers) {
     farmerName: find(['4 1 nama lengkap', 'nama lengkap', 'nama petani', 'nama responden']),
     enumerator: find(['3 1 nama petugas', 'nama petugas', 'petugas', 'pencacah', 'enumerator']),
     commodity: find(['5 1 apa komoditas utama yang sedang diusahakan petani saat ini', 'komoditas utama', 'komoditas usaha utama', 'apa komoditas utama', 'nama komoditas utama']),
-    gender: find(['4 4 jenis kelamin', 'jenis kelamin', 'kelamin']), birthDate: find(['4 3 tanggal lahir', 'tanggal lahir', 'ttl']), maritalStatus: find(['4 5 status perkawinan', 'status perkawinan', 'status menikah']),
+    gender: find(['4 4 jenis kelamin', 'jenis kelamin', 'kelamin']), birthDate: find(['4 3 tanggal lahir', 'tanggal lahir', 'ttl']), age: age, maritalStatus: find(['4 5 status perkawinan', 'status perkawinan', 'status menikah']),
     education: find(['4 11 pendidikan terakhir', '_4 11 pendidikan terakhir', 'pendidikan terakhir', 'tingkat pendidikan']), farmerGroup: find(['4 12 nama kelompok tani', 'nama kelompok tani', 'kelompok tani']),
     youth: find(['apakah anak petani atau pemuda', 'anak petani atau pemuda', 'pemuda petani', 'usia muda']), cooperativeMembership: find(['tergabung sebagai anggota koperasi', 'apakah tergabung sebagai', 'anggota koperasi', '8 11 1 apakah tergabung']),
     landArea: find(['5 3 berapa luas laha', '5 3 berapa luas lahan komoditas utama m2', 'luas lahan area usaha utama', 'luas area usaha utama', 'luas lahan komoditas utama', 'luas areal']),
@@ -1015,6 +1125,61 @@ function displayValue_(value, asAge) {
 
   var text = String(value).replace(/^\d+(?:\.\d+)?\s*/, '').replace(/\s+/g, ' ').trim();
   return text || String(value);
+}
+
+// Prioritaskan umur yang diisikan langsung pada form. Jika belum tersedia,
+// hitung dari tanggal lahir dengan mempertimbangkan apakah ulang tahun tahun ini
+// sudah terlewati.
+function ageFor_(row, cols) {
+  var age = ageInYearsFor_(row, cols);
+  return age === null ? '' : age === -1 ? 'Perlu validasi' : age + ' tahun';
+}
+
+function ageInYearsFor_(row, cols) {
+  var enteredAge = parseAge_(valueFor_(row, cols.age));
+  if (enteredAge !== null) return enteredAge;
+
+  var birthValue = valueFor_(row, cols.birthDate);
+  if (birthValue === '' || birthValue == null) return null;
+  var birthDate = Object.prototype.toString.call(birthValue) === '[object Date]' ? birthValue : new Date(birthValue);
+  if (!isFinite(birthDate.getTime())) return null;
+
+  var today = new Date();
+  var age = today.getFullYear() - birthDate.getFullYear();
+  var birthdayThisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  if (today < birthdayThisYear) age--;
+  return age >= 0 && age <= 120 ? age : -1;
+}
+
+function ageDistribution_(rows, cols) {
+  var groups = [
+    { label: '< 25 tahun', min: 0, max: 24, value: 0 },
+    { label: '25–34 tahun', min: 25, max: 34, value: 0 },
+    { label: '35–44 tahun', min: 35, max: 44, value: 0 },
+    { label: '45–54 tahun', min: 45, max: 54, value: 0 },
+    { label: '55–64 tahun', min: 55, max: 64, value: 0 },
+    { label: '≥ 65 tahun', min: 65, max: 120, value: 0 },
+    { label: 'Tidak diisi / perlu validasi', value: 0 }
+  ];
+  rows.forEach(function (row) {
+    var age = ageInYearsFor_(row, cols);
+    var group = groups[groups.length - 1];
+    if (age !== null && age >= 0) {
+      for (var i = 0; i < groups.length - 1; i++) {
+        if (age >= groups[i].min && age <= groups[i].max) { group = groups[i]; break; }
+      }
+    }
+    group.value++;
+  });
+  return groups;
+}
+
+function parseAge_(value) {
+  if (value === '' || value == null || Object.prototype.toString.call(value) === '[object Date]') return null;
+  var match = String(value).trim().match(/^(\d{1,3})(?:[.,]0+)?\s*(?:tahun|th)?$/i);
+  if (!match) return null;
+  var age = Number(match[1]);
+  return age >= 0 && age <= 120 ? age : null;
 }
 
 function comparableValue_(value) {

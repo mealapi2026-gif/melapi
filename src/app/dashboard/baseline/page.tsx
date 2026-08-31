@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Image from "next/image";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import {
   AlertCircle,
   BarChart3,
-  ChevronDown,
   Download,
   Loader2,
   MapPinned,
@@ -37,6 +37,8 @@ import {
   YAxis,
 } from "recharts";
 import logoSimApi from "../../../../public/images/logo-sim-api.png";
+import { auth, db } from "../../../../lib/firebase";
+import { useMenuPermission } from "../../../../lib/use-menu-permission";
 
 type CountItem = { label: string; value: number };
 type Summary = {
@@ -87,6 +89,29 @@ type SurveyDetail = {
   enumerator: string;
   fields: { label: string; value: string }[];
   photos?: { label: string; fileId: string }[];
+};
+type FollowUpStatus = "Baru" | "Perlu Verifikasi" | "Dalam Proses" | "Selesai";
+type FollowUp = {
+  responseId: string;
+  farmerName: string;
+  status: FollowUpStatus;
+  assignee: string;
+  dueDate: string;
+  notes: string;
+  updatedBy?: string;
+  updatedAtText?: string;
+};
+type FollowUpDraft = Pick<FollowUp, "responseId" | "farmerName" | "status" | "assignee" | "dueDate" | "notes">;
+type InterventionPriority = {
+  location: string;
+  province: string;
+  district: string;
+  village: string;
+  respondents: number;
+  score: number;
+  level: "Sangat tinggi" | "Tinggi" | "Sedang" | "Rendah";
+  reasons: string[];
+  recommendation: string;
 };
 type Analytics = {
   trends?: { day: string; responses: number }[];
@@ -153,6 +178,7 @@ type Analytics = {
     villages?: CountItem[];
     commodities?: CountItem[];
     gender?: CountItem[];
+    ageGroups?: CountItem[];
     education?: CountItem[];
     youth?: CountItem[];
     landStatus?: CountItem[];
@@ -165,6 +191,7 @@ type Analytics = {
     dimensions?: { label: string; score: number }[];
     distribution?: CountItem[];
   };
+  interventionPriorities?: InterventionPriority[];
   insights?: string[];
 };
 
@@ -205,6 +232,7 @@ async function api<T>(
 }
 
 export default function BaselinePage() {
+  const canWriteFollowUp = useMenuPermission("baseline", "write");
   const [options, setOptions] = useState<Options>({
     provinces: [],
     commodities: [],
@@ -241,6 +269,9 @@ export default function BaselinePage() {
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [activeSection, setActiveSection] = useState("ringkasan");
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [followUpDraft, setFollowUpDraft] = useState<FollowUpDraft | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
   const dataRequestRef = useRef(0);
   const optionsRequestRef = useRef(0);
   const filters = useCallback(
@@ -302,6 +333,29 @@ export default function BaselinePage() {
   useEffect(() => {
     Promise.resolve().then(load);
   }, [load]);
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "baselineFollowUps"),
+      (snapshot) => {
+        const records = snapshot.docs.map((record) => {
+          const data = record.data() as Partial<FollowUp>;
+          return {
+            responseId: data.responseId || record.id,
+            farmerName: data.farmerName || "Petani tidak diketahui",
+            status: data.status || "Baru",
+            assignee: data.assignee || "",
+            dueDate: data.dueDate || "",
+            notes: data.notes || "",
+            updatedBy: data.updatedBy || "",
+            updatedAtText: data.updatedAtText || "",
+          } satisfies FollowUp;
+        });
+        setFollowUps(records.sort((left, right) => (right.updatedAtText || "").localeCompare(left.updatedAtText || "")));
+      },
+      () => setError("Tindak lanjut tidak dapat dimuat."),
+    );
+    return unsubscribe;
+  }, []);
   const openDetail = async (id: string) => {
     setDetail(null);
     setDetailLoading(true);
@@ -311,6 +365,39 @@ export default function BaselinePage() {
       setError(cause instanceof Error ? cause.message : "Detail gagal dimuat.");
     } finally {
       setDetailLoading(false);
+    }
+  };
+  const openFollowUp = (row: SurveyTable["rows"][number]) => {
+    const existing = followUps.find((item) => item.responseId === row.id);
+    setFollowUpDraft({
+      responseId: row.id,
+      farmerName: existing?.farmerName || row.cells[0] || "Petani tidak diketahui",
+      status: existing?.status || "Baru",
+      assignee: existing?.assignee || "",
+      dueDate: existing?.dueDate || "",
+      notes: existing?.notes || "",
+    });
+  };
+  const saveFollowUp = async () => {
+    if (!followUpDraft || !canWriteFollowUp) return;
+    setFollowUpSaving(true);
+    try {
+      const currentUser = auth.currentUser;
+      await setDoc(
+        doc(db, "baselineFollowUps", encodeURIComponent(followUpDraft.responseId)),
+        {
+          ...followUpDraft,
+          updatedBy: currentUser?.displayName || currentUser?.email || "Pengguna",
+          updatedAt: serverTimestamp(),
+          updatedAtText: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+      setFollowUpDraft(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Tindak lanjut gagal disimpan.");
+    } finally {
+      setFollowUpSaving(false);
     }
   };
   const quality = analytics?.quality;
@@ -323,6 +410,8 @@ export default function BaselinePage() {
     distribution: [],
   };
   const activeFilterCount = [province, district, subdistrict, village, commodity].filter(Boolean).length;
+  const activeFollowUps = followUps.filter((item) => item.status !== "Selesai");
+  const interventionPriorities = analytics?.interventionPriorities ?? [];
   const priorityRisk = analytics?.risks?.[0]?.label || "Belum ada risiko terpetakan";
   const weakestDimensions = [...(resilience.dimensions ?? [])]
     .sort((left, right) => left.score - right.score)
@@ -332,7 +421,7 @@ export default function BaselinePage() {
   const dashboardSections = [
     ["ringkasan", "Ringkasan"], ["profil", "Profil"], ["lahan", "Lahan"],
     ["komoditas", "Komoditas"], ["budidaya", "Budidaya"], ["usaha", "Usaha"],
-    ["ketahanan", "Ketahanan"], ["tindak-lanjut", "Tindak lanjut"],
+    ["ketahanan", "Ketahanan"], ["prioritas", "Prioritas"], ["tindak-lanjut", "Tindak lanjut"],
   ];
   const askAssistant = useCallback(
     async (question: string) => {
@@ -360,15 +449,18 @@ export default function BaselinePage() {
           averageYield: dashboard?.kpis.averageYield ?? 0,
         },
         analytics: {
-          coordinateCoverage: quality?.coordinateCoverage ?? 0,
-          economicCoverage: quality?.economicCoverage ?? 0,
-          certificationRate: quality?.certificationRate ?? 0,
-          missingCoordinates: quality?.missingCoordinates ?? 0,
-          missingIdentity: quality?.missingIdentity ?? 0,
-          topCommodity: analytics?.monitoring?.commodities?.[0],
-          topRisk: analytics?.risks?.[0],
-          topProvince: analytics?.monitoring?.provinces?.[0],
-          topDistrict: analytics?.monitoring?.districts?.[0],
+          quality,
+          insights: analytics?.insights ?? [],
+          risks: analytics?.risks ?? [],
+          priorities: interventionPriorities,
+          productivity,
+          economics,
+          resilience,
+          commodity: analytics?.commodity ?? {},
+          agroecology: analytics?.agroecology ?? {},
+          financialLiteracy: analytics?.financialLiteracy ?? {},
+          market: analytics?.market ?? {},
+          support: analytics?.support ?? {},
         },
       };
       try {
@@ -413,8 +505,14 @@ export default function BaselinePage() {
       commodity,
       dashboard,
       district,
+      economics,
       province,
       quality,
+      resilience,
+      subdistrict,
+      interventionPriorities,
+      productivity,
+      village,
     ],
   );
   const kpis: [string, string, string, typeof Users][] = [
@@ -633,6 +731,10 @@ export default function BaselinePage() {
             chart="donut"
           />
           <Distribution
+            title="Distribusi Kelompok Umur"
+            items={analytics?.monitoring?.ageGroups}
+          />
+          <Distribution
             title="Pendidikan Terakhir"
             items={analytics?.monitoring?.education}
           />
@@ -826,16 +928,12 @@ export default function BaselinePage() {
       )}
       {activeSection === "budidaya" && (
       <section id="budidaya">
-        <details className="group rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm">
-          <summary className="flex cursor-pointer list-none items-start justify-between gap-4 marker:content-none">
-            <CategoryTitle
-              number="4"
-              title="Praktik Budidaya & Agroekologi"
-              text="Penggunaan input, pengelolaan lahan dan air, pengendalian hama, perlindungan ekosistem, serta minat menerapkan agroekologi."
-            />
-            <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-slate-500 transition group-open:rotate-180" />
-          </summary>
-          <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <CategoryTitle
+          number="4"
+          title="Praktik Budidaya & Agroekologi"
+          text="Penggunaan input, pengelolaan lahan dan air, pengendalian hama, perlindungan ekosistem, serta minat menerapkan agroekologi."
+        />
+        <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <Distribution
             title="Input Organik"
             items={analytics?.agroecology?.organicInputs}
@@ -884,22 +982,17 @@ export default function BaselinePage() {
             items={analytics?.agroecology?.agroecologyInterest}
             chart="donut"
           />
-          </div>
-        </details>
+        </div>
       </section>
       )}
       {activeSection === "usaha" && (
       <section id="usaha">
-        <details className="group rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm">
-          <summary className="flex cursor-pointer list-none items-start justify-between gap-4 marker:content-none">
-            <CategoryTitle
-              number="5"
-              title="Tata Usaha Tani"
-              text="Hasil panen, pencatatan usaha, biaya-pendapatan, pembiayaan, pemasaran, mutu, sertifikasi, dan dukungan usaha."
-            />
-            <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-slate-500 transition group-open:rotate-180" />
-          </summary>
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <CategoryTitle
+          number="5"
+          title="Tata Usaha Tani"
+          text="Hasil panen, pencatatan usaha, biaya-pendapatan, pembiayaan, pemasaran, mutu, sertifikasi, dan dukungan usaha."
+        />
+        <div className="mt-5 grid gap-5 xl:grid-cols-2">
           <ChartCard
             title="Biaya dan Pendapatan"
             text="Perbandingan rata-rata per komoditas."
@@ -948,8 +1041,8 @@ export default function BaselinePage() {
               />
             </div>
           </article>
-          </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <Distribution
             title="Tingkat Literasi Keuangan"
             items={analytics?.financialLiteracy?.levels}
@@ -997,8 +1090,7 @@ export default function BaselinePage() {
             items={analytics?.farmManagement?.qualityStandards}
             chart="donut"
           />
-          </div>
-        </details>
+        </div>
       </section>
       )}
       {activeSection === "ketahanan" && (
@@ -1198,6 +1290,63 @@ export default function BaselinePage() {
         </div>
       </section>
       )}
+      {activeSection === "prioritas" && (
+      <section id="prioritas" className="space-y-5">
+        <CategoryTitle
+          number="7"
+          title="Prioritas Intervensi Wilayah"
+          text="Pemeringkatan kebutuhan pendampingan berdasarkan risiko usaha, produktivitas, ekonomi, praktik agroekologi, dan kualitas data."
+        />
+        <article className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5">
+            <SectionTitle
+              title="Wilayah yang Perlu Didahulukan"
+              text="Skor 0–100; skor lebih tinggi berarti kebutuhan intervensi lebih mendesak."
+            />
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+              {number(interventionPriorities.length)} wilayah terpetakan
+            </span>
+          </div>
+          {interventionPriorities.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
+                  <tr>
+                    <th className="px-5 py-3">Wilayah</th>
+                    <th className="px-5 py-3 text-center">Responden</th>
+                    <th className="px-5 py-3">Skor prioritas</th>
+                    <th className="px-5 py-3">Faktor utama</th>
+                    <th className="px-5 py-3">Rekomendasi awal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {interventionPriorities.map((item) => (
+                    <tr key={`${item.province}-${item.district}-${item.location}`} className="align-top">
+                      <td className="px-5 py-4">
+                        <p className="font-bold text-slate-800">{item.location}</p>
+                        <p className="mt-1 text-xs text-slate-500">{[item.district, item.province].filter((value) => value && value !== "Tidak diisi").join(", ") || "Wilayah belum lengkap"}</p>
+                      </td>
+                      <td className="px-5 py-4 text-center font-semibold text-slate-700">{number(item.respondents)}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <PriorityBadge level={item.level} />
+                          <span className="font-black text-slate-800">{number(item.score)}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">{item.reasons.join(" · ")}</td>
+                      <td className="max-w-md px-5 py-4 leading-6 text-slate-600">{item.recommendation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <Empty />}
+        </article>
+        <p className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-800">
+          Skor ini membantu menentukan urutan verifikasi dan pendampingan; gunakan bersama penilaian petugas lapang, bukan sebagai keputusan otomatis.
+        </p>
+      </section>
+      )}
       {activeSection === "tindak-lanjut" && (
         <>
       <section id="tindak-lanjut" className="space-y-5">
@@ -1335,6 +1484,45 @@ export default function BaselinePage() {
           </section>
         </div>
       </section>
+      <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5">
+          <SectionTitle
+            title="Pekerjaan Tindak Lanjut"
+            text="Catat penanggung jawab, tenggat, dan perkembangan verifikasi setiap respons survei."
+          />
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+            {number(activeFollowUps.length)} aktif dari {number(followUps.length)} tindak lanjut
+          </span>
+        </div>
+        {followUps.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-xs">
+              <thead className="bg-slate-50 uppercase tracking-wider text-slate-400">
+                <tr>
+                  <th className="px-5 py-3">Petani</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">PIC</th>
+                  <th className="px-5 py-3">Tenggat</th>
+                  <th className="px-5 py-3">Catatan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {followUps.map((item) => (
+                  <tr key={item.responseId}>
+                    <td className="px-5 py-3 font-bold text-slate-700">{item.farmerName}</td>
+                    <td className="px-5 py-3"><FollowUpBadge status={item.status} /></td>
+                    <td className="px-5 py-3 text-slate-600">{item.assignee || "—"}</td>
+                    <td className="px-5 py-3 text-slate-600">{formatFollowUpDate(item.dueDate)}</td>
+                    <td className="max-w-80 truncate px-5 py-3 text-slate-600">{item.notes || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="p-5 text-sm text-slate-500">Belum ada respons yang ditambahkan ke daftar tindak lanjut.</p>
+        )}
+      </section>
       <section className="space-y-5">
         <CategoryTitle
           number="6"
@@ -1372,13 +1560,23 @@ export default function BaselinePage() {
                       </td>
                     ))}
                     <td className="px-5 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openDetail(row.id)}
-                        className="font-bold text-emerald-700 hover:text-emerald-900"
-                      >
-                        Lihat
-                      </button>
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openDetail(row.id)}
+                          className="font-bold text-emerald-700 hover:text-emerald-900"
+                        >
+                          Lihat
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!canWriteFollowUp}
+                          onClick={() => openFollowUp(row)}
+                          className="font-bold text-blue-700 hover:text-blue-900 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Tindak lanjuti
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1453,6 +1651,39 @@ export default function BaselinePage() {
                 <DetailPhotos photos={detail?.photos ?? []} />
               </>
             )}
+          </div>
+        </div>
+      )}
+      {followUpDraft && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Tindak Lanjut Survei</p>
+                <h2 className="mt-1 text-lg font-bold text-slate-800">{followUpDraft.farmerName}</h2>
+              </div>
+              <button type="button" onClick={() => setFollowUpDraft(null)} className="text-sm font-bold text-slate-500">Tutup</button>
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-bold text-slate-700">Status
+                <select value={followUpDraft.status} onChange={(event) => setFollowUpDraft({ ...followUpDraft, status: event.target.value as FollowUpStatus })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal">
+                  <option>Baru</option><option>Perlu Verifikasi</option><option>Dalam Proses</option><option>Selesai</option>
+                </select>
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-700">PIC
+                <input value={followUpDraft.assignee} onChange={(event) => setFollowUpDraft({ ...followUpDraft, assignee: event.target.value })} placeholder="Nama penanggung jawab" className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
+              </label>
+              <label className="grid gap-1.5 text-sm font-bold text-slate-700">Tenggat
+                <input type="date" value={followUpDraft.dueDate} onChange={(event) => setFollowUpDraft({ ...followUpDraft, dueDate: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
+              </label>
+            </div>
+            <label className="mt-4 grid gap-1.5 text-sm font-bold text-slate-700">Catatan tindak lanjut
+              <textarea value={followUpDraft.notes} onChange={(event) => setFollowUpDraft({ ...followUpDraft, notes: event.target.value })} rows={4} placeholder="Contoh: konfirmasi ulang titik GPS dengan enumerator." className="resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
+            </label>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setFollowUpDraft(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">Batal</button>
+              <button type="button" disabled={followUpSaving} onClick={saveFollowUp} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{followUpSaving ? "Menyimpan…" : "Simpan tindak lanjut"}</button>
+            </div>
           </div>
         </div>
       )}
@@ -1709,6 +1940,39 @@ function Empty() {
     </div>
   );
 }
+
+function formatFollowUpDate(value: string) {
+  if (!value) return "—";
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(date);
+}
+
+function FollowUpBadge({ status }: { status: FollowUpStatus }) {
+  const colors: Record<FollowUpStatus, string> = {
+    Baru: "bg-slate-100 text-slate-700",
+    "Perlu Verifikasi": "bg-amber-100 text-amber-800",
+    "Dalam Proses": "bg-blue-100 text-blue-800",
+    Selesai: "bg-emerald-100 text-emerald-800",
+  };
+  return (
+    <span className={`rounded-full px-2.5 py-1 font-bold ${colors[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function PriorityBadge({ level }: { level: InterventionPriority["level"] }) {
+  const colors: Record<InterventionPriority["level"], string> = {
+    "Sangat tinggi": "bg-rose-100 text-rose-800",
+    Tinggi: "bg-amber-100 text-amber-800",
+    Sedang: "bg-sky-100 text-sky-800",
+    Rendah: "bg-emerald-100 text-emerald-800",
+  };
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${colors[level]}`}>{level}</span>;
+}
+
 type ChartFormat = "png" | "jpg" | "svg";
 function chartFileName(title: string, format: ChartFormat) {
   return `${title.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.${format}`;

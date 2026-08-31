@@ -56,5 +56,10 @@ service cloud.firestore {
       allow read: if canRead('data-lahan') || canRead('appoli');
       allow write: if canWrite('data-lahan');
     }
+
+    match /baselineFollowUps/{documentId} {
+      allow read: if canRead('baseline');
+      allow write: if canWrite('baseline');
+    }
   }
 }

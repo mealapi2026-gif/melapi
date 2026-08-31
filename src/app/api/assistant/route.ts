@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim()
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite'
+const GEMINI_TIMEOUT_MS = 10_000
+type AssistantPayload = Record<string, unknown> & {
+  question?: unknown
+}
+
+function fallbackAnswer(payload: AssistantPayload, notice?: string) {
+  const question = String(payload.question || '').trim()
+  return `${notice ? `${notice}\n\n` : ''}Saya belum dapat menjawab pertanyaan “${question}” dengan andal tanpa respons Gemini. Silakan coba lagi; saya tidak akan mengganti jawaban Anda dengan ringkasan umum yang tidak relevan.`
+}
 
 function buildPrompt(question: string, payload: Record<string, unknown>) {
   const filters = payload.filters as Record<string, string> | undefined
@@ -15,20 +25,18 @@ function buildPrompt(question: string, payload: Record<string, unknown>) {
 
   return `Kamu adalah AI assistant untuk dashboard monitoring petani.
 Gunakan data berikut sebagai sumber utama dan jangan menebak.
-Jawab dalam bahasa Indonesia dan sangat ringkas, jelas, dan berbasis angka.
-Jika data tidak lengkap, katakan dengan jujur bahwa data tidak cukup.
+Jawab pertanyaan pengguna secara langsung dalam bahasa Indonesia, ringkas, jelas, dan berbasis angka.
+Hanya gunakan fakta yang relevan dengan pertanyaan; jangan mengganti jawaban dengan ringkasan dashboard umum.
+Jika data untuk menjawab pertanyaan tidak tersedia, katakan dengan jujur data apa yang kurang.
 Gunakan format teks berikut secara persis:
-**Ringkasan**
-Satu paragraf singkat.
+**Jawaban**
+Jawaban langsung untuk pertanyaan pengguna.
 
-**Fakta utama**
-- Fakta pertama.
-- Fakta kedua.
-- Fakta ketiga.
+**Data pendukung**
+- Maksimal tiga fakta yang mendukung jawaban.
 
-**Rekomendasi**
-- Rekomendasi pertama.
-- Rekomendasi kedua.
+**Langkah berikutnya**
+- Satu tindakan yang relevan, atau tulis “Tidak ada tindak lanjut khusus.”
 Jangan menulis heading dan bullet pada baris yang sama. Jangan gunakan tabel.
 
 Data dashboard:
@@ -36,36 +44,33 @@ ${compact}`
 }
 
 export async function POST(request: Request) {
+  let payload: AssistantPayload = {}
   try {
-    const payload = await request.json()
+    payload = await request.json() as AssistantPayload
     const question = String(payload.question || '').trim()
     if (!question) {
       return NextResponse.json({ error: 'Pertanyaan tidak boleh kosong.' }, { status: 400 })
     }
 
     if (!GEMINI_API_KEY) {
-      const fallback = `AI belum terhubung di deployment ini karena GEMINI_API_KEY belum dikonfigurasi di Vercel. Tambahkan variable tersebut pada Project Settings > Environment Variables, lalu lakukan redeploy.
-
-    Berdasarkan data dashboard yang aktif:
-- responden: ${Number(payload.dashboard?.respondents ?? 0)}
-- cakupan geotag: ${Number(payload.analytics?.coordinateCoverage ?? 0).toFixed(1)}%
-- data ekonomi valid: ${Number(payload.analytics?.economicCoverage ?? 0).toFixed(1)}%
-- sertifikasi aktif: ${Number(payload.analytics?.certificationRate ?? 0).toFixed(1)}%
-
-Prioritas utama: validasi koordinat dan kelengkapan data ekonomi sebelum analisis lanjut.`
-      return NextResponse.json({ answer: fallback })
+      return NextResponse.json({ answer: fallbackAnswer(payload, 'AI belum terhubung karena GEMINI_API_KEY belum dikonfigurasi.') })
     }
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent', {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-goog-api-key': GEMINI_API_KEY,
       },
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       body: JSON.stringify({
         contents: [{
           parts: [{ text: buildPrompt(question, payload) }],
         }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 350,
+        },
       }),
     })
 
@@ -94,6 +99,11 @@ Prioritas utama: validasi koordinat dan kelengkapan data ekonomi sebelum analisi
     }
     return NextResponse.json({ answer })
   } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      return NextResponse.json({
+        answer: fallbackAnswer(payload, 'Gemini membutuhkan waktu terlalu lama; berikut ringkasan cepat dari data dashboard.'),
+      })
+    }
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Terjadi kesalahan saat meminta AI.' }, { status: 500 })
   }
 }
