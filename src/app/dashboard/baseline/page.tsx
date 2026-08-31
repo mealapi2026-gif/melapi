@@ -41,6 +41,7 @@ import { auth, db } from "../../../../lib/firebase";
 import { useMenuPermission } from "../../../../lib/use-menu-permission";
 
 type CountItem = { label: string; value: number };
+type SampleTarget = { district: string; target: number; sources: string[] };
 type Summary = {
   count: number;
   mean: number;
@@ -83,6 +84,12 @@ type SurveyTable = {
   headers: string[];
   rows: { id: string; cells: string[] }[];
   total: number;
+};
+type Overview = {
+  options: Options;
+  dashboard: Dashboard;
+  analytics: Analytics;
+  table: SurveyTable;
 };
 type SurveyDetail = {
   farmerName: string;
@@ -201,6 +208,26 @@ const number = (value: number, digits = 0) =>
     value || 0,
   );
 const money = (value: number) => `Rp${number(value)}`;
+const sampleTargets: SampleTarget[] = [
+  { district: "Luwu Utara", target: 225, sources: ["luwu utara"] },
+  { district: "Luwu Timur", target: 103, sources: ["luwu timur"] },
+  { district: "Enrekang", target: 92, sources: ["enrekang"] },
+  { district: "Polewali Mandar", target: 143, sources: ["polewali mandar"] },
+  { district: "Toraja Utara", target: 120, sources: ["toraja utara", "toraja"] },
+  { district: "Tuban", target: 129, sources: ["tuban"] },
+  { district: "Boyolali", target: 182, sources: ["boyolali"] },
+  { district: "Indramayu", target: 50, sources: ["indramayu"] },
+  { district: "Tasikmalaya", target: 150, sources: ["tasikmalaya"] },
+  { district: "Ngada", target: 100, sources: ["ngada"] },
+  { district: "Manggarai dan Manggarai Timur", target: 105, sources: ["manggarai", "manggarai timur"] },
+];
+const normalizeDistrict = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^\d+(?:\s*[.\-)]\s*)?/, "")
+    .replace(/^(kabupaten|kab\.?|kota)\s+/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 const escapeHtml = (value: string) =>
   value.replace(
     /[&<>'"]/g,
@@ -252,7 +279,6 @@ export default function BaselinePage() {
   const [table, setTable] = useState<SurveyTable | null>(null);
   const [detail, setDetail] = useState<SurveyDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [optionsLoading, setOptionsLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -273,7 +299,7 @@ export default function BaselinePage() {
   const [followUpDraft, setFollowUpDraft] = useState<FollowUpDraft | null>(null);
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const dataRequestRef = useRef(0);
-  const optionsRequestRef = useRef(0);
+  const mapRequestRef = useRef(0);
   const filters = useCallback(
     () => ({ province, district, subdistrict, village, commodity }),
     [province, district, subdistrict, village, commodity],
@@ -284,22 +310,35 @@ export default function BaselinePage() {
     setError("");
     try {
       const current = filters();
-      const [nextDashboard, nextAnalytics, nextMapPoints, nextTable] =
-        await Promise.all([
+      let nextOverview: Overview;
+      try {
+        nextOverview = await api<Overview>("overview", {
+          ...current,
+          page: String(page),
+          pageSize: "20",
+        });
+      } catch (cause) {
+        // Rollout aman: dashboard tetap berfungsi apabila frontend baru lebih
+        // dahulu aktif daripada deployment Apps Script yang menyediakan overview.
+        if (!(cause instanceof Error) || !/parameter action tidak dikenal/i.test(cause.message)) throw cause;
+        const [nextOptions, nextDashboard, nextAnalytics, nextTable] = await Promise.all([
+          api<Options>("options", current),
           api<Dashboard>("dashboard", current),
           api<Analytics>("analytics", current),
-          api<MapPoint[]>("map", current),
-          api<SurveyTable>("table", {
-            ...current,
-            page: String(page),
-            pageSize: "20",
-          }),
+          api<SurveyTable>("table", { ...current, page: String(page), pageSize: "20" }),
         ]);
+        nextOverview = {
+          options: nextOptions,
+          dashboard: nextDashboard,
+          analytics: nextAnalytics,
+          table: nextTable,
+        };
+      }
       if (requestId !== dataRequestRef.current) return;
-      setDashboard(nextDashboard);
-      setAnalytics(nextAnalytics);
-      setMapPoints(nextMapPoints);
-      setTable(nextTable);
+      setOptions(nextOverview.options);
+      setDashboard(nextOverview.dashboard);
+      setAnalytics(nextOverview.analytics);
+      setTable(nextOverview.table);
     } catch (cause) {
       if (requestId !== dataRequestRef.current) return;
       setError(
@@ -310,29 +349,23 @@ export default function BaselinePage() {
     }
   }, [filters, page]);
   useEffect(() => {
-    const requestId = ++optionsRequestRef.current;
-    setOptionsLoading(true);
-    Promise.resolve().then(async () => {
-      try {
-        const nextOptions = await api<Options>("options", {
-          province,
-          district,
-          subdistrict,
-        });
-        if (requestId === optionsRequestRef.current) setOptions(nextOptions);
-      } catch (cause) {
-        if (requestId !== optionsRequestRef.current) return;
-        setError(
-          cause instanceof Error ? cause.message : "Filter gagal dimuat.",
-        );
-      } finally {
-        if (requestId === optionsRequestRef.current) setOptionsLoading(false);
-      }
-    });
-  }, [province, district, subdistrict]);
-  useEffect(() => {
     Promise.resolve().then(load);
   }, [load]);
+  useEffect(() => {
+    if (activeSection !== "lahan") return;
+    const requestId = ++mapRequestRef.current;
+    Promise.resolve().then(async () => {
+      try {
+        const nextPoints = await api<MapPoint[]>("map", filters());
+        if (requestId === mapRequestRef.current) setMapPoints(nextPoints);
+      } catch (cause) {
+        if (requestId !== mapRequestRef.current) return;
+        setError(
+          cause instanceof Error ? cause.message : "Peta Baseline gagal dimuat.",
+        );
+      }
+    });
+  }, [activeSection, filters]);
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "baselineFollowUps"),
@@ -418,6 +451,32 @@ export default function BaselinePage() {
     .slice(0, 2)
     .map((item) => item.label)
     .join(" dan ") || "data belum lengkap";
+  const districtProgress = sampleTargets.map((item) => {
+    const responses = (analytics?.monitoring?.districts ?? []).reduce(
+      (total, districtItem) =>
+        item.sources.includes(normalizeDistrict(districtItem.label))
+          ? total + districtItem.value
+          : total,
+      0,
+    );
+    return {
+      ...item,
+      responses,
+      progress: item.target ? (responses / item.target) * 100 : 0,
+    };
+  });
+  const sampleTargetTotal = sampleTargets.reduce((total, item) => total + item.target, 0);
+  const sampleResponseTotal = districtProgress.reduce((total, item) => total + item.responses, 0);
+  const sampleProgress = sampleTargetTotal ? (sampleResponseTotal / sampleTargetTotal) * 100 : 0;
+  const districtsOnTarget = districtProgress.filter((item) => item.progress >= 100).length;
+  const remainingSamples = districtProgress.reduce(
+    (total, item) => total + Math.max(0, item.target - item.responses),
+    0,
+  );
+  const excessResponses = districtProgress.reduce(
+    (total, item) => total + Math.max(0, item.responses - item.target),
+    0,
+  );
   const dashboardSections = [
     ["ringkasan", "Ringkasan"], ["profil", "Profil"], ["lahan", "Lahan"],
     ["komoditas", "Komoditas"], ["budidaya", "Budidaya"], ["usaha", "Usaha"],
@@ -544,9 +603,9 @@ export default function BaselinePage() {
   return (
     <main
       className="baseline-report mx-auto max-w-7xl space-y-7 p-5 sm:p-8"
-      aria-busy={loading || optionsLoading}
+      aria-busy={loading}
     >
-      {(loading || optionsLoading) && <DataLoadingOverlay />}
+      {loading && <DataLoadingOverlay />}
       <header className="flex flex-col justify-between gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-800 to-emerald-900 p-6 text-white shadow-xl shadow-slate-950/15 sm:flex-row sm:items-center sm:p-8">
         <div>
           <p className="text-xs font-bold tracking-[.2em] text-emerald-200">
@@ -696,6 +755,70 @@ export default function BaselinePage() {
             <p className="mt-1 text-sm text-slate-500">Data ekonomi valid · GPS {number(quality?.coordinateCoverage ?? 0, 1)}%</p>
           </article>
         </div>
+        <article className="mt-5 overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-white p-5">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Progres responden / sampel per kabupaten</p>
+              <p className="mt-1 text-sm text-slate-500">Respons aktual dibanding target sampel pendataan.</p>
+            </div>
+            <span className={`rounded-full px-3 py-1.5 text-xs font-black ${sampleProgress >= 100 ? "bg-emerald-600 text-white" : "bg-sky-100 text-sky-800"}`}>
+              {number(sampleProgress, 1)}% capaian total
+            </span>
+          </div>
+          <div className="grid gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="bg-white px-5 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Respons terkumpul</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{number(sampleResponseTotal)} <span className="text-sm font-bold text-slate-400">/ {number(sampleTargetTotal)}</span></p>
+            </div>
+            <div className="bg-white px-5 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Target tercapai</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-emerald-600">{number(districtsOnTarget)} <span className="text-sm font-bold text-slate-400">/ {number(sampleTargets.length)} kabupaten</span></p>
+            </div>
+            <div className="bg-white px-5 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Sisa menuju target</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-sky-600">{number(remainingSamples)} <span className="text-sm font-bold text-slate-400">respons</span></p>
+            </div>
+            <div className="bg-white px-5 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Kelebihan respons</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-amber-600">+{number(excessResponses)} <span className="text-sm font-bold text-slate-400">respons</span></p>
+            </div>
+          </div>
+          <div className="hidden grid-cols-[minmax(180px,1fr)_minmax(220px,2fr)_72px_112px_136px] gap-5 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:grid">
+            <span>Kabupaten</span><span>Progres</span><span className="text-right">Capaian</span><span className="text-right">Aktual / target</span><span className="text-right">Status</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {districtProgress.map((item) => {
+              const cappedProgress = Math.min(item.progress, 100);
+              const remaining = Math.max(0, item.target - item.responses);
+              const excess = Math.max(0, item.responses - item.target);
+              const status = excess
+                ? { label: `Kelebihan +${number(excess)}`, className: "bg-amber-100 text-amber-800" }
+                : item.progress >= 100
+                  ? { label: "Target tercapai", className: "bg-emerald-100 text-emerald-800" }
+                  : item.progress >= 75
+                    ? { label: `Kurang ${number(remaining)}`, className: "bg-sky-100 text-sky-800" }
+                    : { label: `Perlu ${number(remaining)}`, className: "bg-rose-100 text-rose-800" };
+              return (
+                <div key={item.district} className="grid gap-2 px-5 py-3.5 sm:grid-cols-[minmax(180px,1fr)_minmax(220px,2fr)_72px_112px_136px] sm:items-center sm:gap-5">
+                  <p className="text-sm font-bold text-slate-700">{item.district}</p>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100" aria-label={`${item.district}: ${number(item.progress, 1)}%`}>
+                    <div
+                      className={`h-full rounded-full ${item.progress >= 100 ? "bg-emerald-500" : item.progress >= 75 ? "bg-sky-500" : "bg-rose-500"}`}
+                      style={{ width: `${cappedProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-right text-sm font-black tabular-nums text-slate-700">
+                    {number(item.progress, 1)}%
+                  </p>
+                  <p className="text-right text-sm font-bold tabular-nums text-slate-600">
+                    {number(item.responses)} / {number(item.target)}
+                  </p>
+                  <span className={`justify-self-start rounded-full px-2.5 py-1 text-[11px] font-bold sm:justify-self-end ${status.className}`}>{status.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </article>
       </section>
       )}
       {activeSection === "profil" && (

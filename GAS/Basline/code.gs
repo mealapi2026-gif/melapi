@@ -21,7 +21,8 @@ function doGet(e) {
       onlyDuplicates: params.onlyDuplicates === 'true'
     };
     var data;
-    if (action === 'options') data = getFilterOptions(filters);
+    if (action === 'overview') data = getOverview(filters, params.page, params.pageSize);
+    else if (action === 'options') data = getFilterOptions(filters);
     else if (action === 'dashboard') data = getDashboard(filters);
     else if (action === 'analytics') data = getAnalytics(filters);
     else if (action === 'table') data = getTable(filters, params.page, params.pageSize);
@@ -47,8 +48,20 @@ function setSpreadsheetId(id) {
   CONFIG.spreadsheetId = String(id);
 }
 
-function getFilterOptions(filters) {
+// Memuat kebutuhan awal dashboard dalam satu pembacaan sheet. Endpoint lama
+// tetap dipertahankan untuk kompatibilitas dengan klien yang belum diperbarui.
+function getOverview(filters, page, pageSize) {
   var dataset = readDataset_();
+  return {
+    options: getFilterOptions(filters, dataset),
+    dashboard: getDashboard(filters, dataset),
+    analytics: getAnalytics(filters, dataset),
+    table: getTable(filters, page, pageSize, dataset)
+  };
+}
+
+function getFilterOptions(filters, dataset) {
+  dataset = dataset || readDataset_();
   filters = filters || {};
   var provinceRows = filterRows_(dataset.rows, dataset.columns, { province: filters.province });
   var districtRows = filterRows_(provinceRows, dataset.columns, {
@@ -68,8 +81,8 @@ function getFilterOptions(filters) {
   };
 }
 
-function getDashboard(filters) {
-  var dataset = readDataset_();
+function getDashboard(filters, dataset) {
+  dataset = dataset || readDataset_();
   var rows = filterRows_(dataset.rows, dataset.columns, filters || {});
   var enumeratorPerformance = buildEnumeratorPerformance_(rows, dataset.columns);
   return {
@@ -168,8 +181,8 @@ function monthKey_(value) {
 
 // Ringkasan analitik untuk dashboard Next.js: tren, statistik deskriptif,
 // kualitas data, dan insight otomatis berdasarkan filter yang aktif.
-function getAnalytics(filters) {
-  var dataset = readDataset_();
+function getAnalytics(filters, dataset) {
+  dataset = dataset || readDataset_();
   var cols = dataset.columns;
   var mappingHealth = columnMappingHealth_(cols);
   var rows = filterRows_(dataset.rows, cols, filters || {});
@@ -574,8 +587,8 @@ function descriptiveStats_(values) {
   return { count: sorted.length, min: sorted[0], max: sorted[sorted.length - 1], mean: mean, median: median, standardDeviation: Math.sqrt(variance) };
 }
 
-function getMapPoints(filters) {
-  var dataset = readDataset_();
+function getMapPoints(filters, dataset) {
+  dataset = dataset || readDataset_();
   var cols = dataset.columns;
   return filterRows_(dataset.rows, cols, filters || {}).map(function (row) {
     var point = parseLocation_(valueFor_(row, cols.geolocation));
@@ -590,8 +603,8 @@ function getMapPoints(filters) {
   }).filter(function (point) { return point; });
 }
 
-function getTable(filters, page, pageSize) {
-  var dataset = readDataset_();
+function getTable(filters, page, pageSize, dataset) {
+  dataset = dataset || readDataset_();
   filters = filters || {};
   var rows = filters.onlyDuplicates ? dataset.allRows : dataset.rows;
   rows = filterTableRows_(rows, dataset.columns, filters);
