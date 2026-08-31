@@ -3,10 +3,22 @@ var SAGGD_KOBO_CONFIG = {
   assetUid: 'a7vNjseoAicBntatMQVdfC',
   sheetName: 'SAGGD',
   headerSheetName: 'SAGGD_Header_Kobo',
-  // Folder utama Dokumen SAGGD.
   driveFolderId: '1_gapfewLlFqIwu3rEKaD3eWGW0kKmt7p',
   baseUrl: 'https://kf.kobotoolbox.org'
 };
+
+function getSaggdKoboToken_() {
+  return PropertiesService.getScriptProperties().getProperty('SAGGD_KOBO_TOKEN') || SAGGD_KOBO_CONFIG.token;
+}
+
+function setSaggdKoboToken_(token) {
+  if (!token || String(token).trim().length < 20) {
+    throw new Error('Token Kobo tidak valid.');
+  }
+  var cleanToken = String(token).trim();
+  PropertiesService.getScriptProperties().setProperty('SAGGD_KOBO_TOKEN', cleanToken);
+  SAGGD_KOBO_CONFIG.token = cleanToken;
+}
 
 function getSaggdKoboSheet_() {
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -138,48 +150,44 @@ function downloadFileWithRetry_(downloadUrl, koboToken, maxRetries = 3) {
   return null; // Gagal setelah semua retry
 }
 
-// Fungsi untuk ambil semua data dari Kobo dengan pagination
+// Fungsi untuk ambil semua data dari Kobo dengan pagination nextUrl
 function ambilSemuaDataKoboDenganPaginasi_(baseUrl, assetUid, token) {
   const options = {
-    "method": "get",
-    "headers": { "Authorization": "Token " + token },
-    "muteHttpExceptions": true
+    method: 'get',
+    headers: { Authorization: 'Token ' + token },
+    muteHttpExceptions: true
   };
-  
+
   let allSubmissions = [];
-  let limit = 100; // Ambil 100 per halaman
-  let offset = 0;
-  let hasMore = true;
+  let nextUrl = `${baseUrl}/api/v2/assets/${assetUid}/data.json`;
+  let page = 1;
 
-  Logger.log(`🔄 Mulai pengambilan data dari Kobo (pagination dengan limit ${limit})...`);
-  
-  while (hasMore) {
-    try {
-      const apiUrl = `${baseUrl}/api/v2/assets/${assetUid}/data.json?limit=${limit}&offset=${offset}&sort=-_id`;
-      const response = UrlFetchApp.fetch(apiUrl, options);
-      
-      if (response.getResponseCode() !== 200) {
-        Logger.log(`⚠️ Error HTTP ${response.getResponseCode()} pada offset ${offset}`);
-        break;
-      }
-      
-      const data = JSON.parse(response.getContentText());
-      const submissions = data.results || [];
-      
-      if (submissions.length === 0) {
-        hasMore = false;
-        break;
-      }
+  Logger.log('🔄 Mulai pengambilan data dari Kobo (pagination nextUrl)...');
+  Logger.log(`📍 Base URL: ${baseUrl}`);
+  Logger.log(`🔑 Asset UID: ${assetUid}`);
+  Logger.log(`🔐 Token prefix: ${token.substring(0, 10)}...`);
 
-      allSubmissions = allSubmissions.concat(submissions);
-      Logger.log(`✓ Halaman ${Math.floor(offset/limit)+1}: ${submissions.length} submission, Total: ${allSubmissions.length}`);
-      
-      offset += limit;
-      Utilities.sleep(500); // Rate limiting
-      
-    } catch (err) {
-      Logger.log(`❌ Error pagination: ${err.message}`);
-      break;
+  while (nextUrl) {
+    Logger.log(`📤 Request ${page}: ${nextUrl}`);
+    const response = UrlFetchApp.fetch(nextUrl, options);
+    const httpCode = response.getResponseCode();
+
+    if (httpCode !== 200) {
+      const errorBody = response.getContentText();
+      Logger.log(`⚠️ Error HTTP ${httpCode} pada ${nextUrl}`);
+      Logger.log(`📋 Response: ${errorBody.substring(0, 500)}`);
+      throw new Error(`Gagal mengambil data Kobo: HTTP ${httpCode}`);
+    }
+
+    const pageData = JSON.parse(response.getContentText());
+    const submissions = pageData.results || [];
+    allSubmissions = allSubmissions.concat(submissions);
+    Logger.log(`✓ Halaman ${page}: ${submissions.length} submission, Total: ${allSubmissions.length}`);
+
+    nextUrl = pageData.next || '';
+    page += 1;
+    if (nextUrl) {
+      Utilities.sleep(500);
     }
   }
 
@@ -188,97 +196,129 @@ function ambilSemuaDataKoboDenganPaginasi_(baseUrl, assetUid, token) {
 }
 
 function tarikDataKoboOtomatis() {
-
-  // === 1. KONFIGURASI UTAMA ===
-  const KOBO_TOKEN = SAGGD_KOBO_CONFIG.token;
+  const KOBO_TOKEN = getSaggdKoboToken_();
   const ASSET_UID = SAGGD_KOBO_CONFIG.assetUid;
   const DRIVE_FOLDER_ID = SAGGD_KOBO_CONFIG.driveFolderId;
   const KOBO_BASE_URL = SAGGD_KOBO_CONFIG.baseUrl;
+  const MAX_DATA_PER_RUN = 10;
 
-  // === 1A. KONFIGURASI NAMA KOLOM ===
-  const HEADER_NAMA_KEGIATAN = "Nama Kegiatan"; 
-  const HEADER_FOTO_ABSENSI = "Foto Absensi"; 
-  const HEADER_FOTO_KEGIATAN = "Foto Kegiatan"; 
+  // Validasi data sebelum sync (gunakan VALIDATION_UTILITIES.gs)
+  // Fungsi validasiDanBersihkanSAGGD() akan deteksi & hapus duplikat header
+  if (typeof validasiDanBersihkanSAGGD === 'function') {
+    try {
+      Logger.log('🔍 Validasi spreadsheet...');
+      validasiDanBersihkanSAGGD();
+    } catch (err) {
+      Logger.log('⚠️ Validasi skip: ' + err.message);
+    }
+  }
+
+  const HEADER_NAMA_KEGIATAN = 'Nama Kegiatan';
+  const HEADER_FOTO_ABSENSI = 'Foto Absensi';
+  const HEADER_FOTO_KEGIATAN = 'Foto Kegiatan';
 
   const sheet = getSaggdKoboSheet_();
   const rootFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-  
   const options = {
-    "method": "get",
-    "headers": { "Authorization": "Token " + KOBO_TOKEN },
-    "muteHttpExceptions": true
+    method: 'get',
+    headers: { Authorization: 'Token ' + KOBO_TOKEN },
+    muteHttpExceptions: true
+  };
+
+  const normalize = function (value) {
+    return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   };
 
   let folderCache = {};
-  
   function getOrCreateFolder(parentFolder, folderName) {
-    folderName = folderName.replace(/[\/\?<>\\:\*\|":]/g, "_").trim();
-    if (!folderName) folderName = "Tanpa Nama";
-    
-    let cacheKey = parentFolder.getId() + "_" + folderName;
+    folderName = String(folderName || 'Tanpa Nama').replace(/[\/\?<>\\:\*\|":]/g, '_').trim();
+    if (!folderName) folderName = 'Tanpa Nama';
+
+    const cacheKey = parentFolder.getId() + '_' + folderName;
     if (folderCache[cacheKey]) return DriveApp.getFolderById(folderCache[cacheKey]);
-    
-    let folders = parentFolder.getFoldersByName(folderName);
-    let folder = folders.hasNext() ? folders.next() : parentFolder.createFolder(folderName);
+
+    const folders = parentFolder.getFoldersByName(folderName);
+    const folder = folders.hasNext() ? folders.next() : parentFolder.createFolder(folderName);
     folderCache[cacheKey] = folder.getId();
-    
     return folder;
   }
 
-  // === 2. AMBIL KAMUS FORM ===
   const assetInfoUrl = `${KOBO_BASE_URL}/api/v2/assets/${ASSET_UID}/`;
   const assetResponse = UrlFetchApp.fetch(assetInfoUrl, options);
-  let labelMap = {}; 
-  let reverseLabelMap = {}; 
-  let choiceMap = {}; 
+  let labelMap = {};
+  let reverseLabelMap = {};
+  let choiceMap = {};
 
   if (assetResponse.getResponseCode() === 200) {
     const assetData = JSON.parse(assetResponse.getContentText());
     if (assetData.content && assetData.content.survey) {
-      assetData.content.survey.forEach(q => {
-        if (q.name) {
+      const walkSurvey = function (questions) {
+        (questions || []).forEach(function (q) {
+          if (!q || !q.name) return;
           let label = Array.isArray(q.label) ? q.label[0] : (q.label || q.name);
-          label = label.replace(/\r?\n|\r/g, " ").trim(); 
+          label = String(label).replace(/\r?\n|\r/g, ' ').trim();
           labelMap[q.name] = label;
           reverseLabelMap[label] = q.name;
-        }
-      });
+          if (q.children) walkSurvey(q.children);
+        });
+      };
+      walkSurvey(assetData.content.survey);
     }
+
     if (assetData.content && assetData.content.choices) {
-      assetData.content.choices.forEach(c => {
-        if (c.name) {
-          let label = Array.isArray(c.label) ? c.label[0] : (c.label || c.name);
-          choiceMap[c.name] = label;
+      assetData.content.choices.forEach(function (choice) {
+        if (choice && choice.name) {
+          let label = Array.isArray(choice.label) ? choice.label[0] : (choice.label || choice.name);
+          choiceMap[choice.name] = label;
+          choiceMap[normalize(choice.name)] = label;
         }
       });
     }
   }
 
-  // === 3. AMBIL SEMUA DATA SUBMISSION DENGAN PAGINATION ===
   const submissions = ambilSemuaDataKoboDenganPaginasi_(KOBO_BASE_URL, ASSET_UID, KOBO_TOKEN);
   if (!submissions || submissions.length === 0) {
-    Logger.log("⚠️ Tidak ada data submission dari Kobo");
+    Logger.log('⚠️ Tidak ada data submission dari Kobo');
     return;
   }
 
-  // === 4. SIAPKAN HEADER ===
   let allColumns = new Set();
-  submissions.forEach(sub => {
-    Object.keys(sub).forEach(key => { if (key !== "_attachments") allColumns.add(key); });
+  submissions.forEach(function (sub) {
+    Object.keys(sub).forEach(function (key) {
+      if (key !== '_attachments') allColumns.add(key);
+    });
   });
-  
+
   let internalHeaders = Array.from(allColumns);
   let sheetHeaders = [];
-  
+
   if (sheet.getLastRow() === 0) {
-    sheetHeaders = internalHeaders.map(h => labelMap[h] || h);
+    sheetHeaders = internalHeaders.map(function (header) {
+      return labelMap[header] || header;
+    });
     sheet.appendRow(sheetHeaders);
     Logger.log(`✓ Header dibuat: ${sheetHeaders.length} kolom`);
   } else {
     sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    var missingHeaders = internalHeaders.filter(function (internalHeader) {
+      return !sheetHeaders.some(function (sheetHeader) {
+        var label = labelMap[internalHeader] || internalHeader;
+        return String(sheetHeader || '').trim() === String(label || '').trim() || normalize(sheetHeader) === normalize(label);
+      });
+    });
+
+    if (missingHeaders.length > 0) {
+      var newHeaders = missingHeaders.map(function (internalHeader) {
+        return labelMap[internalHeader] || internalHeader;
+      });
+      var firstNewColumn = sheetHeaders.length + 1;
+      sheet.getRange(1, firstNewColumn, 1, newHeaders.length).setValues([newHeaders]);
+      sheetHeaders = sheetHeaders.concat(newHeaders);
+      Logger.log(`Sheet SAGGD diperbarui: ${missingHeaders.length} kolom baru ditambahkan.`);
+    }
   }
 
-  // === 5. CEK DUPLIKAT DATA ===
   let existingIds = [];
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
@@ -288,110 +328,119 @@ function tarikDataKoboOtomatis() {
     }
   }
 
-  Logger.log(`📊 Status: ${lastRow-1} existing rows, ${submissions.length} total in Kobo, ${existingIds.length} existing IDs`);
+  Logger.log(`📊 Status: ${lastRow - 1} existing rows, ${submissions.length} total in Kobo, ${existingIds.length} existing IDs`);
 
-  const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const idxKegiatan = sheetHeaders.indexOf(HEADER_NAMA_KEGIATAN);
   const idxAbsen = sheetHeaders.indexOf(HEADER_FOTO_ABSENSI);
   const idxFotoKeg = sheetHeaders.indexOf(HEADER_FOTO_KEGIATAN);
 
-  // === FILTER & AMBIL SEMUA DATA BARU (TIDAK ADA BATASAN 10) ===
-  let dataBaru = submissions.filter(sub => !existingIds.includes(String(sub._id)));
+  let dataBaru = submissions.filter(function (sub) {
+    return !existingIds.includes(String(sub._id));
+  });
   Logger.log(`🆕 Data baru ditemukan: ${dataBaru.length}`);
   
-  if (dataBaru.length === 0) {
-    Logger.log("✅ Tidak ada data baru untuk diproses");
+  // Ambil hanya MAX_DATA_PER_RUN data pertama untuk processing
+  const dataYangAkanDiproses = dataBaru.slice(0, MAX_DATA_PER_RUN);
+  Logger.log(`📋 Data yang akan diproses: ${dataYangAkanDiproses.length} (limit: ${MAX_DATA_PER_RUN})`);
+  
+  if (dataBaru.length > MAX_DATA_PER_RUN) {
+    Logger.log(`  (Sisa ${dataBaru.length - MAX_DATA_PER_RUN} data akan diproses di run berikutnya)`);
+  }
+
+  if (dataYangAkanDiproses.length === 0) {
+    Logger.log('✅ Tidak ada data baru untuk diproses');
     return;
   }
 
-  let allNewRows = []; 
+  let allNewRows = [];
   let successCount = 0;
-  let failCount = 0; 
+  let failCount = 0;
 
-  // === 6. PROSES BARIS DATA (SEMUA DATA BARU, TANPA BATASAN) ===
-  for (let i = 0; i < dataBaru.length; i++) {
+  for (let i = 0; i < dataYangAkanDiproses.length; i++) {
     try {
-      const sub = dataBaru[i];
+      const sub = dataYangAkanDiproses[i];
       const koboId = String(sub._id);
-
       let rowData = [];
+
       for (let h = 0; h < sheetHeaders.length; h++) {
         const sheetHeader = sheetHeaders[h];
         const originalColName = reverseLabelMap[sheetHeader] || sheetHeader;
         let val = sub[originalColName];
-        
+
         if (val !== undefined && val !== null) {
           if (typeof val === 'string') {
-            if (choiceMap[val]) {
-              val = choiceMap[val]; 
-            } else if (val.includes(" ")) {
-              let splitVals = val.split(" ");
-              if (splitVals.some(v => choiceMap[v])) {
-                val = splitVals.map(v => choiceMap[v] || v).join(", ");
+            const text = val.trim();
+            if (choiceMap[text]) {
+              val = choiceMap[text];
+            } else if (choiceMap[normalize(text)]) {
+              val = choiceMap[normalize(text)];
+            } else if (text.includes(' ')) {
+              const splitVals = text.split(/\s+/);
+              if (splitVals.some(function (v) { return choiceMap[v] || choiceMap[normalize(v)]; })) {
+                val = splitVals.map(function (v) {
+                  return choiceMap[v] || choiceMap[normalize(v)] || v;
+                }).join(', ');
               }
             }
           } else if (typeof val === 'object') {
-            val = JSON.stringify(val); 
+            val = JSON.stringify(val);
           }
         } else {
-          val = ""; 
+          val = '';
         }
+
         rowData.push(val);
       }
 
-      let submitDate = new Date(sub._submission_time);
-      let namaBulan = monthNames[submitDate.getMonth()] + " " + submitDate.getFullYear();
-      let namaKegiatan = (idxKegiatan > -1 && rowData[idxKegiatan] !== "") ? String(rowData[idxKegiatan]) : "Kegiatan Tidak Diketahui";
-      
-      let fileMap = {};
+      const submitDate = new Date(sub._submission_time);
+      const namaBulan = monthNames[submitDate.getMonth()] + ' ' + submitDate.getFullYear();
+      const namaKegiatan = (idxKegiatan > -1 && String(rowData[idxKegiatan] || '').trim() !== '') ? String(rowData[idxKegiatan]) : 'Kegiatan Tidak Diketahui';
 
-      // === PROSES DOWNLOAD FILE DENGAN RETRY ===
+      let fileMap = {};
       if (sub._attachments && sub._attachments.length > 0) {
         Logger.log(`  📁 ${koboId}: Download ${sub._attachments.length} file...`);
-        
+
         for (let j = 0; j < sub._attachments.length; j++) {
           const attachment = sub._attachments[j];
           const downloadUrl = attachment.download_url;
-          
-          // Ambil nama file dan handle URL encoding
-          const rawFileName = attachment.filename.split('/').pop(); 
+          const rawFileName = String(attachment.filename || '').split('/').pop();
           let originalFileName = rawFileName;
-          try { originalFileName = decodeURIComponent(rawFileName); } catch(e) {}
-          
+          try {
+            originalFileName = decodeURIComponent(rawFileName);
+          } catch (e) {
+            // ignore decode error
+          }
+
           const newFileName = `${koboId}_${originalFileName}`;
 
           try {
-            let kategori = "Lainnya";
-            if (idxAbsen > -1 && String(rowData[idxAbsen]).includes(originalFileName)) {
-              kategori = "Foto Absensi";
-            } else if (idxFotoKeg > -1 && String(rowData[idxFotoKeg]).includes(originalFileName)) {
-              kategori = "Foto Kegiatan";
+            let kategori = 'Lainnya';
+            if (idxAbsen > -1 && String(rowData[idxAbsen] || '').includes(originalFileName)) {
+              kategori = 'Foto Absensi';
+            } else if (idxFotoKeg > -1 && String(rowData[idxFotoKeg] || '').includes(originalFileName)) {
+              kategori = 'Foto Kegiatan';
             }
 
-            let catFolder = getOrCreateFolder(rootFolder, kategori);
-            let monthFolder = getOrCreateFolder(catFolder, namaBulan);
-            let actFolder = getOrCreateFolder(monthFolder, namaKegiatan);
+            const catFolder = getOrCreateFolder(rootFolder, kategori);
+            const monthFolder = getOrCreateFolder(catFolder, namaBulan);
+            const actFolder = getOrCreateFolder(monthFolder, namaKegiatan);
 
-            // Gunakan download dengan retry
             const fileResponse = downloadFileWithRetry_(downloadUrl, KOBO_TOKEN, 3);
-            
             if (fileResponse) {
               let fileBlob;
-              if (originalFileName.toLowerCase().endsWith('.heic')) {
-                const rawData = fileResponse.getContent(); 
-                fileBlob = Utilities.newBlob(rawData, "image/heic", newFileName);
+              if (String(originalFileName).toLowerCase().endsWith('.heic')) {
+                const rawData = fileResponse.getContent();
+                fileBlob = Utilities.newBlob(rawData, 'image/heic', newFileName);
               } else {
                 fileBlob = fileResponse.getBlob().setName(newFileName);
               }
-              
-              const file = actFolder.createFile(fileBlob); 
-              
-              // Simpan URL Google Drive langsung ke map
-              fileMap[originalFileName] = file.getUrl(); 
+
+              const file = actFolder.createFile(fileBlob);
+              fileMap[originalFileName] = file.getUrl();
               fileMap[rawFileName] = file.getUrl();
-              
               Logger.log(`    ✓ File: ${originalFileName}`);
-              Utilities.sleep(500); 
+              Utilities.sleep(500);
             } else {
               Logger.log(`    ⚠️ File gagal download: ${originalFileName}`);
             }
@@ -401,41 +450,35 @@ function tarikDataKoboOtomatis() {
         }
       }
 
-      // === GANTI NAMA FILE DENGAN URL GOOGLE DRIVE ===
       for (let c = 0; c < rowData.length; c++) {
-        let cellText = String(rowData[c]);
-        
-        if (!cellText || cellText === "undefined" || cellText.trim() === "") continue;
+        let cellText = String(rowData[c] || '');
+        if (!cellText || cellText === 'undefined' || cellText.trim() === '') continue;
 
-        // Pencarian dengan mengabaikan huruf besar/kecil dan karakter khusus
-        let cellCompare = cellText.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-
+        const matchedUrls = [];
         for (let fileName in fileMap) {
-          let fileCompare = fileName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          
-          if (fileCompare.length > 3 && cellCompare.includes(fileCompare)) {
-            // Ganti nama file langsung dengan URL Drive
-            rowData[c] = fileMap[fileName]; 
-            break; 
+          const fileCompare = String(fileName).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          if (fileCompare.length > 3 && cellText.toLowerCase().includes(fileName.toLowerCase())) {
+            matchedUrls.push(fileMap[fileName]);
           }
+        }
+
+        if (matchedUrls.length > 0) {
+          rowData[c] = Array.from(new Set(matchedUrls)).join(',');
         }
       }
 
       allNewRows.push(rowData);
       successCount++;
-      
-      // Log progress setiap 10 baris
+
       if ((i + 1) % 10 === 0) {
-        Logger.log(`  ✓ ${i + 1}/${dataBaru.length} baris diproses...`);
+        Logger.log(`  ✓ ${i + 1}/${dataYangAkanDiproses.length} baris diproses...`);
       }
-      
     } catch (err) {
       failCount++;
       Logger.log(`❌ Error baris ${i}: ${err.message}`);
     }
   }
 
-  // === TULIS SEMUA DATA KE SHEET ===
   if (allNewRows.length > 0) {
     try {
       const nextRow = sheet.getLastRow() + 1;
@@ -448,7 +491,7 @@ function tarikDataKoboOtomatis() {
       Logger.log(`❌ Error menulis ke sheet: ${err.message}`);
     }
   } else {
-    Logger.log("⚠️ Tidak ada data baru untuk ditulis");
+    Logger.log('⚠️ Tidak ada data baru untuk ditulis');
   }
 }
 
@@ -488,7 +531,7 @@ function tampilkanStatistikData() {
   Logger.log("=========================================\n");
 }
 
-// Ambil status koneksi Kobo
+// Ambil status koneksi Kobo dengan detail debugging
 function cekKoneksiKobo() {
   Logger.log("\n🔍 Mengecek koneksi Kobo...\n");
   
@@ -500,18 +543,62 @@ function cekKoneksiKobo() {
   };
   
   try {
-    const assetResponse = UrlFetchApp.fetch(config.baseUrl + '/api/v2/assets/' + config.assetUid + '/', options);
+    // Test 1: Asset info
+    Logger.log("TEST 1: Mengambil info asset form...");
+    const assetInfoUrl = `${config.baseUrl}/api/v2/assets/${config.assetUid}/`;
+    Logger.log(`  URL: ${assetInfoUrl}`);
+    
+    const assetResponse = UrlFetchApp.fetch(assetInfoUrl, options);
+    const assetCode = assetResponse.getResponseCode();
+    Logger.log(`  Response Code: ${assetCode}`);
+    
+    if (assetCode !== 200) {
+      Logger.log(`  ❌ Error: ${assetResponse.getContentText().substring(0, 200)}`);
+      return;
+    }
+    
     const assetData = JSON.parse(assetResponse.getContentText());
     
     Logger.log(`✅ Koneksi OK`);
-    Logger.log(`📋 Form: ${assetData.name || 'Unknown'}`);
+    Logger.log(`📋 Form Name: ${assetData.name || 'Unknown'}`);
     Logger.log(`📊 Total submissions: ${assetData.deployment__submission_count || 'Unknown'}`);
     Logger.log(`🔑 Asset UID: ${config.assetUid}`);
+    Logger.log(`📍 Base URL: ${config.baseUrl}`);
     
-    const dataResponse = UrlFetchApp.fetch(config.baseUrl + '/api/v2/assets/' + config.assetUid + '/data.json?limit=1', options);
-    const data = JSON.parse(dataResponse.getContentText());
+    // Test 2: Data API tanpa parameter
+    Logger.log("\nTEST 2: Mengambil data tanpa parameter...");
+    const dataUrlSimple = `${config.baseUrl}/api/v2/assets/${config.assetUid}/data.json`;
+    Logger.log(`  URL: ${dataUrlSimple}`);
     
-    Logger.log(`✅ Data API OK - Latest submission ID: ${data.results && data.results[0] ? data.results[0]._id : 'None'}`);
+    const dataResponseSimple = UrlFetchApp.fetch(dataUrlSimple, options);
+    const dataCodeSimple = dataResponseSimple.getResponseCode();
+    Logger.log(`  Response Code: ${dataCodeSimple}`);
+    
+    if (dataCodeSimple === 200) {
+      const data = JSON.parse(dataResponseSimple.getContentText());
+      Logger.log(`✅ Data API OK - Total results: ${(data.results || []).length}`);
+      if (data.results && data.results[0]) {
+        Logger.log(`  Latest submission ID: ${data.results[0]._id}`);
+      }
+    } else {
+      Logger.log(`  ❌ Error: ${dataResponseSimple.getContentText().substring(0, 200)}`);
+    }
+    
+    // Test 3: Data API dengan limit/offset
+    Logger.log("\nTEST 3: Mengambil data dengan limit=100&offset=0...");
+    const dataUrlWithParams = `${config.baseUrl}/api/v2/assets/${config.assetUid}/data.json?limit=100&offset=0`;
+    Logger.log(`  URL: ${dataUrlWithParams}`);
+    
+    const dataResponseParams = UrlFetchApp.fetch(dataUrlWithParams, options);
+    const dataCodeParams = dataResponseParams.getResponseCode();
+    Logger.log(`  Response Code: ${dataCodeParams}`);
+    
+    if (dataCodeParams === 200) {
+      const data = JSON.parse(dataResponseParams.getContentText());
+      Logger.log(`✅ Pagination OK - Total results: ${(data.results || []).length}`);
+    } else {
+      Logger.log(`  ❌ Error: ${dataResponseParams.getContentText().substring(0, 300)}`);
+    }
     
   } catch (err) {
     Logger.log(`❌ Error: ${err.message}`);

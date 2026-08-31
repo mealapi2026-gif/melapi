@@ -41,6 +41,7 @@ interface Peserta {
 interface ActivityItem {
   lokasi: string;
   organisasi: string;
+  kabupaten: string;
   komoditas: string;
   jenisKegiatan: string;
   pelapor: string;
@@ -58,8 +59,8 @@ interface ActivityItem {
   biayaSwadaya: number;
   biayaLembagaLain: number;
   totalPembiayaanItem: number;
-  fotoAbsensi: string;
-  fotoKegiatan: string;
+  fotoAbsensi: string | string[];
+  fotoKegiatan: string | string[];
   lat: number | null;
   lng: number | null;
 }
@@ -74,6 +75,7 @@ interface ApiResponse {
   filterOptions?: {
     kegiatan: string[];
     organisasi: string[];
+    kabupaten: string[];
   };
   table: ActivityItem[];
 }
@@ -84,6 +86,14 @@ const driveFileId = (value: string) => {
   const fileMatch = value.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   const queryMatch = value.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   return fileMatch?.[1] || queryMatch?.[1] || '';
+};
+const normalizePhotoList = (value: string | string[] | undefined): string[] => {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : String(value).split(/[\n,;]+/);
+  return items
+    .map((item) => String(item).trim())
+    .filter((item) => item && (item.startsWith('http://') || item.startsWith('https://')))
+    .filter((item, index, array) => array.indexOf(item) === index);
 };
 const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;'
@@ -140,6 +150,7 @@ export default function SaggdDashboard() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activityFilter, setActivityFilter] = useState<string>('');
   const [organizationFilter, setOrganizationFilter] = useState<string>('');
+  const [districtFilter, setDistrictFilter] = useState<string>('');
   const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null);
 
   const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || '';
@@ -187,8 +198,10 @@ export default function SaggdDashboard() {
     return (
       (!activityFilter || normalize(item.jenisKegiatan) === normalize(activityFilter)) &&
       (!organizationFilter || normalize(item.organisasi) === normalize(organizationFilter)) &&
+      (!districtFilter || normalize(item.kabupaten || '') === normalize(districtFilter)) &&
       (normalize(item.jenisKegiatan).includes(q) ||
         normalize(item.organisasi).includes(q) ||
+        normalize(item.kabupaten || '').includes(q) ||
         normalize(item.lokasi).includes(q) ||
         normalize(item.pelapor).includes(q))
     );
@@ -230,6 +243,7 @@ export default function SaggdDashboard() {
 
   const activityOptions = data?.filterOptions?.kegiatan || Array.from(new Map(data?.table.map((item) => [normalize(item.jenisKegiatan), item.jenisKegiatan]) || []).values()).sort();
   const organizationOptions = data?.filterOptions?.organisasi || Array.from(new Map(data?.table.map((item) => [normalize(item.organisasi), item.organisasi]) || []).values()).sort();
+  const districtOptions = data?.filterOptions?.kabupaten || Array.from(new Map(data?.table.map((item) => [normalize(item.kabupaten || ''), item.kabupaten || '']) || []).values()).filter(Boolean).sort();
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
@@ -320,7 +334,7 @@ export default function SaggdDashboard() {
 
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
         <label className="text-xs font-bold text-slate-500">
           Jenis kegiatan
           <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="mt-2 w-full">
@@ -333,6 +347,13 @@ export default function SaggdDashboard() {
           <select value={organizationFilter} onChange={(e) => setOrganizationFilter(e.target.value)} className="mt-2 w-full">
             <option value="">Semua organisasi</option>
             {organizationOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label className="text-xs font-bold text-slate-500">
+          Kabupaten
+          <select value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)} className="mt-2 w-full">
+            <option value="">Semua kabupaten</option>
+            {districtOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
       </div>
@@ -527,9 +548,33 @@ function ActivityDetailModal({
           <div className="md:col-span-2"><DetailGroup title="Hasil kegiatan"><p className="whitespace-pre-line text-sm leading-6 text-slate-600">{activity.hasil || '-'}</p></DetailGroup></div>
           <div className="md:col-span-2"><DetailGroup title="Dokumentasi">
             <div className="grid gap-4 md:grid-cols-2">
-              {activity.fotoKegiatan?.startsWith('http') && <PhotoPreview label="Foto kegiatan" url={activity.fotoKegiatan} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />}
-              {activity.fotoAbsensi?.startsWith('http') && <PhotoPreview label="Foto absensi" url={activity.fotoAbsensi} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />}
-              {!activity.fotoKegiatan?.startsWith('http') && !activity.fotoAbsensi?.startsWith('http') && <span className="text-sm text-slate-400">Tidak ada dokumentasi.</span>}
+              {(() => {
+                const fotoKegiatanList = normalizePhotoList(activity.fotoKegiatan);
+                const fotoAbsensiList = normalizePhotoList(activity.fotoAbsensi);
+                return (
+                  <>
+                    {fotoKegiatanList.length > 0 && (
+                      <div className="space-y-4">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Foto kegiatan</p>
+                        {fotoKegiatanList.map((url, index) => (
+                          <PhotoPreview key={`${url}-${index}`} label={`Foto kegiatan ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
+                        ))}
+                      </div>
+                    )}
+                    {fotoAbsensiList.length > 0 && (
+                      <div className="space-y-4">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Foto absensi</p>
+                        {fotoAbsensiList.map((url, index) => (
+                          <PhotoPreview key={`${url}-${index}`} label={`Foto absensi ${index + 1}`} url={url} endpoint={process.env.NEXT_PUBLIC_SAGGD_APPS_SCRIPT_URL || ''} />
+                        ))}
+                      </div>
+                    )}
+                    {fotoKegiatanList.length === 0 && fotoAbsensiList.length === 0 && (
+                      <span className="text-sm text-slate-400">Tidak ada dokumentasi.</span>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </DetailGroup></div>
         </div>

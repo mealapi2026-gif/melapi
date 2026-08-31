@@ -1,41 +1,88 @@
-// GANTI fungsi doGet() lama dengan ini:
-function doGet(e) {
-  try {
-    const params = (e && e.parameter) || {};
-    if (params.action === "photo") {
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success",
-        data: getPhotoData(params.fileId)
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-    // Memanggil fungsi logika Anda yang sudah ada
-    const resultData = getDashboardData();
-    
-    // Mengubah hasil menjadi format string JSON
-    const jsonResponse = JSON.stringify({
-      status: "success",
-      data: resultData
-    });
-    
-    // Mengembalikan data sebagai REST API (JSON)
-    return ContentService.createTextOutput(jsonResponse)
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (error) {
-    // Jika ada error (misal nama sheet salah/kosong), kembalikan pesan error
-    const errorResponse = JSON.stringify({
-      status: "error",
-      message: error.message || String(error)
-    });
-    
-    return ContentService.createTextOutput(errorResponse)
-      .setMimeType(ContentService.MimeType.JSON);
+/**
+ * MODUL VALIDASI DATA UNTUK DASHBOARD
+ * ====================================
+ * Pastikan hanya data VALID yang ditampilkan di dashboard SAGGD
+ * - Filter baris dengan _id kosong
+ * - Hapus duplikat data
+ * - Validasi struktur field
+ */
+
+/**
+ * Validasi data sebelum ditampilkan ke dashboard
+ * @param {Array} rows - Array baris dari sheet
+ * @returns {Object} { validRows, invalidRows, stats }
+ */
+function validasiDataDashboard_(rows) {
+  if (!rows || rows.length === 0) {
+    return { validRows: [], invalidRows: [], stats: { total: 0, valid: 0, invalid: 0, duplikat: 0 } };
   }
+
+  const seenIds = new Set();
+  const validRows = [];
+  const invalidRows = [];
+  let duplikatCount = 0;
+
+  rows.forEach((row, index) => {
+    // Ambil _id dari kolom pertama (index 0)
+    const rowId = String(row[0] || "").trim();
+    
+    // CEK 1: _id harus ada dan tidak kosong
+    if (!rowId || rowId === "" || rowId === "null" || rowId === "undefined") {
+      invalidRows.push({
+        index: index + 2, // +2 karena baris header (1) + 0-indexed (1)
+        reason: "ID kosong",
+        row: row
+      });
+      return;
+    }
+
+    // CEK 2: Cek duplikat _id
+    if (seenIds.has(rowId)) {
+      invalidRows.push({
+        index: index + 2,
+        reason: "Duplikat ID: " + rowId,
+        row: row
+      });
+      duplikatCount++;
+      return;
+    }
+
+    // CEK 3: Validasi field penting tidak semua kosong
+    const kegiatan = String(row[7] || "").trim();
+    const organisasi = String(row[5] || "").trim();
+    const lokasi = String(row[4] || "").trim();
+
+    if (!kegiatan && !organisasi && !lokasi) {
+      invalidRows.push({
+        index: index + 2,
+        reason: "Data utama kosong (kegiatan, organisasi, lokasi)",
+        row: row
+      });
+      return;
+    }
+
+    // Data VALID
+    seenIds.add(rowId);
+    validRows.push(row);
+  });
+
+  return {
+    validRows: validRows,
+    invalidRows: invalidRows,
+    stats: {
+      total: rows.length,
+      valid: validRows.length,
+      invalid: invalidRows.length,
+      duplikat: duplikatCount
+    }
+  };
 }
 
-// --- BIARKAN FUNGSI DI BAWAH INI TETAP ADA SEPERTI SEMULA ---
-// function getDashboardData() { ... }
-function getDashboardData() {
+/**
+ * Wrapper getDashboardData yang include validasi
+ * Gunakan fungsi ini sebagai pengganti getDashboardData()
+ */
+function getDashboardDataWithValidation() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     throw new Error("Gagal terhubung ke Database. Pastikan skrip ini terikat pada Google Sheets.");
@@ -43,7 +90,7 @@ function getDashboardData() {
   
   const sheet = ss.getSheetByName("SAGGD");
   if (!sheet) {
-    throw new Error("Sheet dengan nama 'SAGGD' tidak ditemukan. Harap pastikan nama tab di bawah spreadsheet persis 'SAGGD'.");
+    throw new Error("Sheet dengan nama 'SAGGD' tidak ditemukan.");
   }
 
   const data = sheet.getDataRange().getValues();
@@ -51,19 +98,23 @@ function getDashboardData() {
     throw new Error("Tabel 'SAGGD' kosong. Hanya ada baris header tanpa data laporan.");
   }
 
-  const headers = data[0].map(h => String(h).trim()); 
-  // Memotong 1 baris header, data dibaca dari baris ke-2
+  // Ambil dan validasi rows
   const rows = data.slice(1).filter(r => r.join("").trim() !== "");
+  const validation = validasiDataDashboard_(rows);
 
-  const findHeaderIndex = (namePatterns) => {
-    const normalizedPatterns = namePatterns.map(p => String(p).toLowerCase());
-    return headers.findIndex(header => {
-      const normalizedHeader = String(header || '').toLowerCase();
-      return normalizedPatterns.some(pattern => normalizedHeader.includes(pattern));
-    });
-  };
+  // Log validasi (hanya di production log, user tidak perlu lihat)
+  if (validation.invalidRows.length > 0) {
+    Logger.log(`⚠️ Dashboard: ${validation.invalidRows.length} baris tidak valid dihapus dari display`);
+    Logger.log(`   - Duplikat: ${validation.stats.duplikat}`);
+    Logger.log(`   - Kosong: ${validation.invalidRows.length - validation.stats.duplikat}`);
+  }
 
-  const districtIndex = findHeaderIndex(['kabupaten', 'district', 'kota']);
+  // Gunakan validRows untuk proses selanjutnya
+  const validatedData = [data[0], ...validation.validRows]; // Include header
+
+  // LANJUTKAN LOGIKA getDashboardData() SEPERTI BIASA dengan validatedData
+  const headers = validatedData[0].map(h => String(h).trim()); 
+  const processedRows = validatedData.slice(1);
 
   const requiredHeaders = {
     pemudaLaki: 'group_rn3xe30/_9a_Pemuda_Laki2_35_th',
@@ -89,7 +140,7 @@ function getDashboardData() {
   let organisasiSet = new Set();
   let organisasiNames = {};
 
-  rows.forEach(row => {
+  processedRows.forEach(row => {
     let org = row[5]; 
     if (org && String(org).trim() !== "") {
       let organizationName = String(org).replace(/\s+/g, " ").trim();
@@ -110,9 +161,7 @@ function getDashboardData() {
     if (idx.perempuanDewasa !== -1) totalPeserta += (parseFloat(row[idx.perempuanDewasa]) || 0);
   });
 
-  const kegiatanTerbaru = rows.slice().reverse().map(row => {
-    
-    // LOGIKA PERBAIKAN "KEGIATAN LAINNYA" (KOLOM H & I)
+  const kegiatanTerbaru = processedRows.slice().reverse().map(row => {
     let namaKegiatan = String(row[7] || "").trim(); 
     let cekKegiatan = namaKegiatan.toLowerCase();
     
@@ -128,24 +177,19 @@ function getDashboardData() {
       tglStr = String(tgl);
     }
 
-    // LOGIKA PEMECAHAN KOORDINAT (KOLOM AB / INDEKS 27)
     let gpsString = String(row[27] || "").trim(); 
     let lat = null;
     let lng = null;
     
     if (gpsString !== "" && gpsString !== "-") {
       try {
-        // Hapus kurung siku jika ada, misal: "[-8.14, 112.17]" menjadi "-8.14, 112.17"
         let cleanString = gpsString.replace(/\[|\]/g, ''); 
-        
-        // Pisahkan berdasarkan koma dan/atau spasi
         let parts = cleanString.split(/[\s,]+/); 
         
         if (parts.length >= 2) {
           lat = parseFloat(parts[0]); 
           lng = parseFloat(parts[1]); 
           
-          // TRIK JITTER: Geser titik sejauh ~50-100 meter agar marker tidak saling menutupi
           if (!isNaN(lat) && !isNaN(lng)) {
             let randomOffsetLat = (Math.random() - 0.5) * 0.001;
             let randomOffsetLng = (Math.random() - 0.5) * 0.001;
@@ -154,7 +198,7 @@ function getDashboardData() {
           }
         }
       } catch (error) {
-        // Abaikan jika format teks salah/tidak valid
+        // Abaikan
       }
     }
 
@@ -163,12 +207,9 @@ function getDashboardData() {
     let bLembagaLain = parseFloat(row[23]) || 0; 
     let totalBiayaItem = bAktual + bSwadaya + bLembagaLain;
 
-    const kabupaten = districtIndex !== -1 ? String(row[districtIndex] || "-").replace(/\s+/g, " ").trim() : "-";
-
     return {
       lokasi: String(row[4] || "-"),           
       organisasi: row[5] ? String(row[5]).replace(/\s+/g, " ").trim() : "-",
-      kabupaten: kabupaten,
       komoditas: String(row[6] || "-"),        
       jenisKegiatan: namaKegiatan,             
       pelapor: String(row[9] || "-"),          
@@ -192,74 +233,55 @@ function getDashboardData() {
       biayaLembagaLain: bLembagaLain,
       totalPembiayaanItem: totalBiayaItem,
       lembagaLainNama: String(row[23] || "-"), 
-      fotoAbsensi: normalizePhotoValue_(row[25]),
-      fotoKegiatan: normalizePhotoValue_(row[26]),
+      fotoAbsensi: String(row[25] || ""),      
+      fotoKegiatan: String(row[26] || ""),
       lat: lat,
       lng: lng
     };
   });
 
-  const kabupatenOptions = uniqueStringValues_(kegiatanTerbaru.map(item => item.kabupaten || "-"));
-
   return {
     kpi: {
-      totalKegiatan: rows.length,
+      totalKegiatan: validation.validRows.length,  // Gunakan validated count
       totalPeserta: totalPeserta,
       totalPembiayaan: totalPembiayaanGlobal,
       totalOrganisasi: organisasiSet.size
     },
     filterOptions: {
       kegiatan: uniqueActivityNames_(kegiatanTerbaru),
-      organisasi: Object.keys(organisasiNames).map(function (key) { return organisasiNames[key]; }).sort(),
-      kabupaten: kabupatenOptions
+      organisasi: Object.keys(organisasiNames).map(function (key) { return organisasiNames[key]; }).sort()
     },
-    table: kegiatanTerbaru
+    table: kegiatanTerbaru,
+    _validation: {
+      totalRows: validation.stats.total,
+      validRows: validation.stats.valid,
+      invalidRows: validation.stats.invalid,
+      duplicateCount: validation.stats.duplikat
+    }
   };
 }
 
-function normalizePhotoValue_(value) {
-  if (!value && value !== 0) return [];
-  var raw = String(value || "");
-  var candidates = raw.split(/[\n,;]+/).map(function (item) {
-    return String(item || "").trim();
-  }).filter(function (item) {
-    return item && (item.indexOf('http://') === 0 || item.indexOf('https://') === 0 || item.indexOf('drive.google.com') !== -1 || item.indexOf('docs.google.com') !== -1);
-  });
-  if (candidates.length === 0) return [];
-  var unique = {};
-  candidates.forEach(function (item) {
-    unique[item] = true;
-  });
-  return Object.keys(unique);
-}
-
-function uniqueActivityNames_(items) {
-  var names = {};
-  items.forEach(function (item) {
-    var name = String(item.jenisKegiatan || "-").replace(/\s+/g, " ").trim();
-    var key = name.toLowerCase();
-    if (name && !names[key]) names[key] = name;
-  });
-  return Object.keys(names).map(function (key) { return names[key]; }).sort();
-}
-
-function uniqueStringValues_(values) {
-  var unique = {};
-  values.forEach(function (value) {
-    var text = String(value || "-").replace(/\s+/g, " ").trim();
-    var key = text.toLowerCase();
-    if (text && text !== "-" && !unique[key]) unique[key] = text;
-  });
-  return Object.keys(unique).map(function (key) { return unique[key]; }).sort();
-}
-
-function getPhotoData(fileId) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(String(fileId || ""))) {
-    throw new Error("ID foto tidak valid.");
+/**
+ * Test: Lihat detail validasi data
+ */
+function testValidasiDashboard() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("SAGGD");
+  const data = sheet.getDataRange().getValues();
+  const rows = data.slice(1).filter(r => r.join("").trim() !== "");
+  
+  const validation = validasiDataDashboard_(rows);
+  
+  Logger.log("=== VALIDASI DATA DASHBOARD ===");
+  Logger.log(`Total baris: ${validation.stats.total}`);
+  Logger.log(`Baris valid: ${validation.stats.valid}`);
+  Logger.log(`Baris invalid: ${validation.stats.invalid}`);
+  Logger.log(`Duplikat: ${validation.stats.duplikat}`);
+  
+  if (validation.invalidRows.length > 0) {
+    Logger.log("\n📋 Detail baris tidak valid:");
+    validation.invalidRows.forEach(item => {
+      Logger.log(`  Baris ${item.index}: ${item.reason}`);
+    });
   }
-  const file = DriveApp.getFileById(fileId);
-  const blob = file.getThumbnail() || file.getBlob();
-  const type = blob.getContentType();
-  if (type.indexOf("image/") !== 0) throw new Error("Dokumentasi bukan file gambar.");
-  return "data:" + type + ";base64," + Utilities.base64Encode(blob.getBytes());
 }
