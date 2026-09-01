@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { Activity, ClipboardCheck, Edit3, Eye, Leaf, Loader2, Map, MapPinned, Plus, Search, Sprout, Tractor, Trash2, Users } from 'lucide-react';
 import { auth, db } from '../../../../lib/firebase';
+import { openAppoliPdf, type AppoliPdfCollection } from '../../../../lib/appoli-pdf';
 import { useMenuPermission } from '../../../../lib/use-menu-permission';
 import PetaniFormModal from './petani-form-modal';
 import InspeksiIcsPreview from './inspeksi-ics/inspeksi-ics-preview';
@@ -528,7 +529,7 @@ export default function DashboardAppoli() {
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => void openAppoliPdf('analisaUsaha', selectedAnalisa.id).catch((error: unknown) => alert(error instanceof Error ? error.message : 'PDF tidak dapat dibuat.'))}
                 className="rounded-lg border border-sky-200 bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
               >
                 Cetak PDF
@@ -596,50 +597,25 @@ function AppoliMap({ points }: { points: MapPoint[] }) {
 
 function escapeMapText(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[character] || character)); }
 
-function PdfPreviewModal({ title, recordId, pdfUrl, children, onClose }: { title: string; recordId?: string; pdfUrl?: string; children: React.ReactNode; onClose: () => void }) {
+function PdfPreviewModal({ title, recordId, children, onClose }: { title: string; recordId?: string; children: React.ReactNode; onClose: () => void }) {
   const childProps = (children as React.ReactElement<Record<string, unknown>>)?.props || {};
   const resolvedRecordId = recordId || String(childProps.kodePetani || childProps.kode || '');
   const collectionName = title.includes('Analisa') ? 'analisaUsaha' : title.includes('Inspeksi') ? 'inspeksiICS' : 'dataLahan';
-  const resolvedPdfUrl = pdfUrl || (resolvedRecordId ? `/api/appoli/pdf?collection=${collectionName}&id=${encodeURIComponent(resolvedRecordId)}` : '');
-  const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const previewUrlRef = useRef('');
 
   const printPdf = async () => {
-    const pdfWindow = window.open('', '_blank');
-    if (!pdfWindow) return;
-    if (previewUrl) {
-      pdfWindow.location.href = previewUrl;
-      return;
-    }
-    if (!resolvedPdfUrl || !auth.currentUser || isGenerating) {
-      pdfWindow.close();
-      return;
-    }
+    if (!resolvedRecordId || isGenerating) return;
     setIsGenerating(true);
-    let timeout = 0;
+    setPreviewError('');
     try {
-      const token = await auth.currentUser.getIdToken();
-      const controller = new AbortController();
-      timeout = window.setTimeout(() => controller.abort(), 50000);
-      const response = await fetch(resolvedPdfUrl, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
-      if (!response.ok) throw new Error('PDF tidak dapat dimuat.');
-      const objectUrl = URL.createObjectURL(await response.blob());
-      previewUrlRef.current = objectUrl;
-      setPreviewUrl(objectUrl);
-      pdfWindow.location.href = objectUrl;
+      await openAppoliPdf(collectionName as AppoliPdfCollection, resolvedRecordId);
     } catch (error) {
       console.error('Gagal membuat PDF:', error);
-      pdfWindow.close();
-      setPreviewError(error instanceof DOMException && error.name === 'AbortError' ? 'PDF terlalu lama diproses. Coba lagi.' : 'PDF tidak dapat dibuat.');
+      setPreviewError(error instanceof Error ? error.message : 'PDF tidak dapat dibuat.');
     } finally {
-      if (timeout) window.clearTimeout(timeout);
       setIsGenerating(false);
     }
   };
-  useEffect(() => () => {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-  }, []);
   return <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 print:static print:overflow-visible print:bg-white print:p-0" role="dialog" aria-modal="true"><div className="mx-auto w-full max-w-5xl"><div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 shadow-xl print:hidden"><h2 className="text-sm font-bold text-slate-800">{title}</h2><div className="flex items-center gap-2">{previewError && <span className="text-xs text-rose-600">{previewError}</span>}<button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Tutup</button><button type="button" onClick={printPdf} disabled={isGenerating} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isGenerating ? 'Membuat PDF...' : 'Cetak PDF'}</button></div></div>{children}</div></div>;
 }

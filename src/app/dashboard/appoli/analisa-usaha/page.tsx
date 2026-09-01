@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../../../../lib/firebase';
+import { openAppoliPdf } from '../../../../../lib/appoli-pdf';
 import { useMenuPermission } from '../../../../../lib/use-menu-permission';
 import AnalisaUsahaPreview from './analisa-usaha-preview';
 
@@ -45,6 +46,8 @@ export default function AnalisaUsahaPage() {
   const [musimTanam, setMusimTanam] = useState('2026');
   const [isSaving, setIsSaving] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [savedRecordId, setSavedRecordId] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const buildPayload = () => {
     const petani = petaniOptions.find((item) => item.idPetani === selectedPetani);
@@ -253,6 +256,8 @@ export default function AnalisaUsahaPage() {
       setVarietas(String(saved.varietas || ''));
       setMusimTanam(String(saved.musimTanam || ''));
       setFormData(saved.formData as FormState);
+      setSavedRecordId(reference.id);
+      setShowPreviewModal(true);
       alert('Analisa usaha berhasil disimpan.');
     } catch (error) {
       console.error('Gagal menyimpan analisa usaha:', error);
@@ -262,8 +267,12 @@ export default function AnalisaUsahaPage() {
     }
   };
 
-  const handlePrintPdf = () => {
-    window.print();
+  const handlePrintPdf = async () => {
+    if (!savedRecordId || pdfLoading) return;
+    setPdfLoading(true);
+    try { await openAppoliPdf('analisaUsaha', savedRecordId); }
+    catch (error) { alert(error instanceof Error ? error.message : 'PDF tidak dapat dibuat.'); }
+    finally { setPdfLoading(false); }
   };
 
   return (
@@ -528,9 +537,10 @@ export default function AnalisaUsahaPage() {
             <button
               type="button"
               onClick={handlePrintPdf}
-              className="rounded-lg border border-sky-200 bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+              disabled={pdfLoading || !savedRecordId}
+              className="rounded-lg border border-sky-200 bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cetak PDF
+              {pdfLoading ? 'Membuat PDF...' : 'Cetak PDF'}
             </button>
           </div>
         </div>

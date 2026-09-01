@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { addDoc, collection, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ClipboardCheck, Loader2, Save, ShieldCheck } from 'lucide-react';
 import { db } from '../../../../../lib/firebase';
+import { openAppoliPdf } from '../../../../../lib/appoli-pdf';
 import { useMenuPermission } from '../../../../../lib/use-menu-permission';
 import InspeksiIcsPreview from './inspeksi-ics-preview';
 
@@ -46,6 +47,8 @@ export default function InspeksiIcsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [savedRecordId, setSavedRecordId] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
   const selected = petani.find((item) => item.idPetani === selectedId);
   const totalLand = lands.reduce((sum, land) => sum + (Number(land.luas) || 0), 0);
 
@@ -101,8 +104,17 @@ export default function InspeksiIcsPage() {
       const saved = savedSnapshot.data();
       if (!saved) throw new Error('Data Firestore tidak ditemukan setelah disimpan.');
       setInspektur(String(saved.inspektur || '')); setTanggal(String(saved.tanggal || '')); setJam(String(saved.jam || '')); setStatusBidang(String(saved.statusBidang || 'Sama')); setKelolaOrganik(String(saved.kelolaOrganik || 'Ya')); setLands(saved.lahan as LandRow[]); setChecks(saved.kriteria as Record<string, CheckValue>); setRisks(saved.manajemenRisiko as Record<string, { level: string; dasar: string }>); setRecommendation(saved.rekomendasi as typeof recommendation); setDecision(String(saved.keputusan || 'Disetujui')); setSanksi(String(saved.sanksiTambahan || ''));
+      setSavedRecordId(reference.id);
+      setShowPreview(true);
       setMessage('Hasil inspeksi tersimpan di Firestore.');
     } catch (error) { console.error('Gagal menyimpan inspeksi ICS:', error); setMessage('Data gagal disimpan. Periksa koneksi dan hak akses Firestore.'); } finally { setSaving(false); }
+  };
+  const printPdf = async () => {
+    if (!savedRecordId || pdfLoading) return;
+    setPdfLoading(true);
+    try { await openAppoliPdf('inspeksiICS', savedRecordId); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'PDF tidak dapat dibuat.'); }
+    finally { setPdfLoading(false); }
   };
 
   return <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
@@ -115,7 +127,7 @@ export default function InspeksiIcsPage() {
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-bold text-slate-800">Rekomendasi dan keputusan ICS</h2><div className="grid gap-4 sm:grid-cols-2"><RadioGroup label="Kondisi sebelum inspeksi" value={recommendation.kondisiSebelum} options={['Sesuai', 'Perlu perbaikan']} onChange={(value) => setRecommendation((current) => ({ ...current, kondisiSebelum: value }))} /><RadioGroup label="Rekomendasi tahun ini" value={recommendation.tahunIni} options={['Sesuai', 'Perlu perbaikan']} onChange={(value) => setRecommendation((current) => ({ ...current, tahunIni: value }))} /></div><label className="mt-4 block text-sm font-semibold text-slate-700">Persyaratan tambahan atau catatan<textarea value={recommendation.syaratPenjelasan} onChange={(event) => setRecommendation((current) => ({ ...current, syaratPenjelasan: event.target.value }))} rows={3} className={inputClass} /></label><div className="mt-4 grid gap-4 sm:grid-cols-2"><RadioGroup label="Keputusan ICS" value={decision} options={['Disetujui', 'Sanksi Syarat', 'Ditolak']} onChange={setDecision} /><label className="text-sm font-semibold text-slate-700">Persyaratan tambahan / sanksi<textarea value={sanksi} onChange={(event) => setSanksi(event.target.value)} rows={2} className={inputClass} /></label></div></section>
       {message && <p className={`rounded-lg p-4 text-sm font-semibold ${message.includes('tersimpan') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{message}</p>}<div className="flex justify-end"><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? 'Menyimpan ke Firestore...' : 'Simpan'}</button></div>
     </form>
-    {showPreview && selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 print:static print:overflow-visible print:bg-white print:p-0"><div className="mx-auto w-fit max-w-full"><InspeksiIcsPreview nama={selected.namaPetani || ''} kode={selected.idPetani} alamat={[selected.alamatPetani, selected.kelompokTani].filter(Boolean).join(' / ')} inspektur={inspektur} tanggal={tanggal} jam={jam} statusBidang={statusBidang} kelolaOrganik={kelolaOrganik} lands={lands} checks={checks} sections={sections} postHarvest={postHarvest} risks={risks} riskItems={riskItems} recommendation={recommendation} decision={decision} sanksi={sanksi} /><div className="fixed bottom-5 left-1/2 flex -translate-x-1/2 gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-xl print:hidden"><button type="button" onClick={() => setShowPreview(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Tutup</button><button type="button" onClick={() => window.print()} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white">Cetak PDF</button></div></div></div>}
+    {showPreview && selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 print:static print:overflow-visible print:bg-white print:p-0"><div className="mx-auto w-fit max-w-full"><InspeksiIcsPreview nama={selected.namaPetani || ''} kode={selected.idPetani} alamat={[selected.alamatPetani, selected.kelompokTani].filter(Boolean).join(' / ')} inspektur={inspektur} tanggal={tanggal} jam={jam} statusBidang={statusBidang} kelolaOrganik={kelolaOrganik} lands={lands} checks={checks} sections={sections} postHarvest={postHarvest} risks={risks} riskItems={riskItems} recommendation={recommendation} decision={decision} sanksi={sanksi} /><div className="fixed bottom-5 left-1/2 flex -translate-x-1/2 gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-xl print:hidden"><button type="button" onClick={() => setShowPreview(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Tutup</button><button type="button" onClick={printPdf} disabled={pdfLoading || !savedRecordId} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pdfLoading ? 'Membuat PDF...' : 'Cetak PDF'}</button></div></div></div>}
   </div>;
 }
 
