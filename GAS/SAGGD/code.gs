@@ -1,265 +1,132 @@
-// GANTI fungsi doGet() lama dengan ini:
+/** REST API Dashboard SAGGD. Semua data dipetakan dari nama header Sheet. */
 function doGet(e) {
   try {
-    const params = (e && e.parameter) || {};
-    if (params.action === "photo") {
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success",
-        data: getPhotoData(params.fileId)
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-    // Memanggil fungsi logika Anda yang sudah ada
-    const resultData = getDashboardData();
-    
-    // Mengubah hasil menjadi format string JSON
-    const jsonResponse = JSON.stringify({
-      status: "success",
-      data: resultData
-    });
-    
-    // Mengembalikan data sebagai REST API (JSON)
-    return ContentService.createTextOutput(jsonResponse)
-      .setMimeType(ContentService.MimeType.JSON);
-      
+    var params = (e && e.parameter) || {};
+    var action = params.action || 'dashboard';
+    var data = action === 'photo' ? getPhotoData(params.fileId) :
+      action === 'headers' ? getSaggdHeaders() :
+      action === 'dashboard' ? getDashboardData() : null;
+    if (data === null) throw new Error('Parameter action tidak dikenal.');
+    return jsonSaggd_({ status: 'success', data: data });
   } catch (error) {
-    // Jika ada error (misal nama sheet salah/kosong), kembalikan pesan error
-    const errorResponse = JSON.stringify({
-      status: "error",
-      message: error.message || String(error)
-    });
-    
-    return ContentService.createTextOutput(errorResponse)
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonSaggd_({ status: 'error', message: error.message || String(error) });
   }
 }
 
-// --- BIARKAN FUNGSI DI BAWAH INI TETAP ADA SEPERTI SEMULA ---
-// function getDashboardData() { ... }
-function getDashboardData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    throw new Error("Gagal terhubung ke Database. Pastikan skrip ini terikat pada Google Sheets.");
-  }
-  
-  const sheet = ss.getSheetByName("SAGGD");
-  if (!sheet) {
-    throw new Error("Sheet dengan nama 'SAGGD' tidak ditemukan. Harap pastikan nama tab di bawah spreadsheet persis 'SAGGD'.");
-  }
+function jsonSaggd_(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
 
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) {
-    throw new Error("Tabel 'SAGGD' kosong. Hanya ada baris header tanpa data laporan.");
-  }
+function getSaggdSheetApi_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('Spreadsheet aktif tidak ditemukan.');
+  var sheet = ss.getSheetByName('SAGGD');
+  if (!sheet) throw new Error("Sheet 'SAGGD' tidak ditemukan.");
+  return sheet;
+}
 
-  const headers = data[0].map(h => String(h).trim()); 
-  // Memotong 1 baris header, data dibaca dari baris ke-2
-  const rows = data.slice(1).filter(r => r.join("").trim() !== "");
-
-  const findHeaderIndex = (namePatterns) => {
-    const normalizedPatterns = namePatterns.map(p => String(p).toLowerCase());
-    return headers.findIndex(header => {
-      const normalizedHeader = String(header || '').toLowerCase();
-      return normalizedPatterns.some(pattern => normalizedHeader.includes(pattern));
-    });
-  };
-
-  const districtIndex = findHeaderIndex(['kabupaten', 'district', 'kota']);
-
-  const requiredHeaders = {
-    pemudaLaki: 'group_rn3xe30/_9a_Pemuda_Laki2_35_th',
-    pemudaPerempuan: 'group_rn3xe30/_9b_Pemuda_Perempuan_35_th',
-    lakiDewasa: 'group_rn3xe30/_9c_Laki_35_th',
-    perempuanDewasa: 'group_rn3xe30/_9d_Perempuan_35_th',
-    biayaAktual: '_12_Pembiayaan_Aktual_Rp',
-    biayaSwadaya: '_14_Kontribusi_Orgaisasi_Suwadaya_Rp'
-  };
-
-  const idx = {};
-  for (let key in requiredHeaders) {
-    let index = headers.findIndex(h => {
-      let headerLower = h.toLowerCase();
-      let reqLower = requiredHeaders[key].toLowerCase();
-      return headerLower === reqLower || headerLower.includes(reqLower);
-    });
-    idx[key] = index !== -1 ? index : -1; 
-  }
-
-  let totalPembiayaanGlobal = 0;
-  let totalPeserta = 0;
-  let organisasiSet = new Set();
-  let organisasiNames = {};
-
-  rows.forEach(row => {
-    let org = row[5]; 
-    if (org && String(org).trim() !== "") {
-      let organizationName = String(org).replace(/\s+/g, " ").trim();
-      let organizationKey = organizationName.toLowerCase();
-      organisasiSet.add(organizationKey);
-      if (!organisasiNames[organizationKey]) organisasiNames[organizationKey] = organizationName;
-    }
-    
-    let bAktual = idx.biayaAktual !== -1 ? (parseFloat(row[idx.biayaAktual]) || 0) : (parseFloat(row[22]) || 0);
-    let bSwadaya = idx.biayaSwadaya !== -1 ? (parseFloat(row[idx.biayaSwadaya]) || 0) : 0;
-    let bLembagaLain = parseFloat(row[23]) || 0; 
-    
-    totalPembiayaanGlobal += (bAktual + bSwadaya + bLembagaLain);
-    
-    if (idx.pemudaLaki !== -1) totalPeserta += (parseFloat(row[idx.pemudaLaki]) || 0);
-    if (idx.pemudaPerempuan !== -1) totalPeserta += (parseFloat(row[idx.pemudaPerempuan]) || 0);
-    if (idx.lakiDewasa !== -1) totalPeserta += (parseFloat(row[idx.lakiDewasa]) || 0);
-    if (idx.perempuanDewasa !== -1) totalPeserta += (parseFloat(row[idx.perempuanDewasa]) || 0);
+function getSaggdHeaders() {
+  var sheet = getSaggdSheetApi_();
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (header, index) {
+    return { index: index + 1, header: String(header || '').trim() };
   });
+}
 
-  const kegiatanTerbaru = rows.slice().reverse().map(row => {
-    
-    // LOGIKA PERBAIKAN "KEGIATAN LAINNYA" (KOLOM H & I)
-    let namaKegiatan = String(row[7] || "").trim(); 
-    let cekKegiatan = namaKegiatan.toLowerCase();
-    
-    if (cekKegiatan.includes("lainnya") || cekKegiatan.includes("lainya") || cekKegiatan.includes("4.16")) {
-      namaKegiatan = String(row[8] || "-").trim(); 
+function normSaggd_(value) { return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); }
+function cellSaggd_(row, index) {
+  if (Array.isArray(index)) return index.map(function (item) { return cellSaggd_(row, item); }).filter(function (item) { return item !== ''; }).join('\n');
+  return index >= 0 && row[index] != null ? row[index] : '';
+}
+function textSaggd_(value, fallback) {
+  var text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  return text || (fallback == null ? '' : fallback);
+}
+function numberSaggd_(value) {
+  if (typeof value === 'number') return isFinite(value) ? value : 0;
+  var normalized = String(value == null ? '' : value).replace(/[^0-9,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+  var result = Number(normalized);
+  return isFinite(result) ? result : 0;
+}
+function dateSaggd_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return textSaggd_(value, 'Tanggal belum diisi');
+}
+function pointSaggd_(value) {
+  var match = String(value || '').match(/\[?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return { lat: null, lng: null };
+  var lat = Number(match[1]), lng = Number(match[2]);
+  return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat: lat, lng: lng } : { lat: null, lng: null };
+}
+function photoListSaggd_(value) {
+  var items = String(value || '').split(/[\n,;]+/).map(function (item) { return item.trim(); }).filter(function (item) { return /^https?:\/\//i.test(item); });
+  return items.filter(function (item, index) { return items.indexOf(item) === index; });
+}
+
+function resolveSaggdColumns_(headers) {
+  var normalized = headers.map(normSaggd_);
+  function find(candidates) {
+    for (var c = 0; c < candidates.length; c++) {
+      var target = normSaggd_(candidates[c]);
+      var exact = normalized.indexOf(target);
+      if (exact >= 0) return exact;
     }
-
-    let tglStr = "-";
-    let tgl = row[10]; 
-    if (tgl instanceof Date) {
-      tglStr = Utilities.formatDate(tgl, Session.getScriptTimeZone(), "yyyy-MM-dd");
-    } else if (tgl) {
-      tglStr = String(tgl);
-    }
-
-    // LOGIKA PEMECAHAN KOORDINAT (KOLOM AB / INDEKS 27)
-    let gpsString = String(row[27] || "").trim(); 
-    let lat = null;
-    let lng = null;
-    
-    if (gpsString !== "" && gpsString !== "-") {
-      try {
-        // Hapus kurung siku jika ada, misal: "[-8.14, 112.17]" menjadi "-8.14, 112.17"
-        let cleanString = gpsString.replace(/\[|\]/g, ''); 
-        
-        // Pisahkan berdasarkan koma dan/atau spasi
-        let parts = cleanString.split(/[\s,]+/); 
-        
-        if (parts.length >= 2) {
-          lat = parseFloat(parts[0]); 
-          lng = parseFloat(parts[1]); 
-          
-          // TRIK JITTER: Geser titik sejauh ~50-100 meter agar marker tidak saling menutupi
-          if (!isNaN(lat) && !isNaN(lng)) {
-            let randomOffsetLat = (Math.random() - 0.5) * 0.001;
-            let randomOffsetLng = (Math.random() - 0.5) * 0.001;
-            lat += randomOffsetLat;
-            lng += randomOffsetLng;
-          }
-        }
-      } catch (error) {
-        // Abaikan jika format teks salah/tidak valid
-      }
-    }
-
-    let bAktual = idx.biayaAktual !== -1 ? (parseFloat(row[idx.biayaAktual]) || 0) : (parseFloat(row[22]) || 0);
-    let bSwadaya = idx.biayaSwadaya !== -1 ? (parseFloat(row[idx.biayaSwadaya]) || 0) : 0;
-    let bLembagaLain = parseFloat(row[23]) || 0; 
-    let totalBiayaItem = bAktual + bSwadaya + bLembagaLain;
-
-    const kabupaten = districtIndex !== -1 ? String(row[districtIndex] || "-").replace(/\s+/g, " ").trim() : "-";
-
-    return {
-      lokasi: String(row[4] || "-"),           
-      organisasi: row[5] ? String(row[5]).replace(/\s+/g, " ").trim() : "-",
-      kabupaten: kabupaten,
-      komoditas: String(row[6] || "-"),        
-      jenisKegiatan: namaKegiatan,             
-      pelapor: String(row[9] || "-"),          
-      tanggal: tglStr,                         
-      durasi: String(row[12] || "-"),          
-      peserta: {
-        pemudaLaki: String(row[13] || "0"),    
-        pemudaPr: String(row[14] || "0"),      
-        dewasaLaki: String(row[15] || "0"),    
-        dewasaPr: String(row[16] || "0")       
-      },
-      hasil: String(row[17] || "-"),           
-      indikator: {
-        produksi: String(row[18] || "-"),      
-        ekonomi: String(row[19] || "-"),       
-        kapasitas: String(row[20] || "-"),     
-        advokasi: String(row[21] || "-")       
-      },
-      pembiayaanAktual: bAktual,    
-      biayaSwadaya: bSwadaya,
-      biayaLembagaLain: bLembagaLain,
-      totalPembiayaanItem: totalBiayaItem,
-      lembagaLainNama: String(row[23] || "-"), 
-      fotoAbsensi: normalizePhotoValue_(row[25]),
-      fotoKegiatan: normalizePhotoValue_(row[26]),
-      lat: lat,
-      lng: lng
-    };
-  });
-
-  const kabupatenOptions = uniqueStringValues_(kegiatanTerbaru.map(item => item.kabupaten || "-"));
-
+    return -1;
+  }
+  function findAll(candidates) {
+    var matches = [];
+    candidates.forEach(function (candidate) {
+      var target = normSaggd_(candidate);
+      normalized.forEach(function (header, index) { if (header === target && matches.indexOf(index) === -1) matches.push(index); });
+    });
+    return matches;
+  }
   return {
-    kpi: {
-      totalKegiatan: rows.length,
-      totalPeserta: totalPeserta,
-      totalPembiayaan: totalPembiayaanGlobal,
-      totalOrganisasi: organisasiSet.size
-    },
-    filterOptions: {
-      kegiatan: uniqueActivityNames_(kegiatanTerbaru),
-      organisasi: Object.keys(organisasiNames).map(function (key) { return organisasiNames[key]; }).sort(),
-      kabupaten: kabupatenOptions
-    },
-    table: kegiatanTerbaru
+    lokasiProgram: find(['_1_Lokasi_Program']), organisasi: find(['_2_Nama_Organisasi']), komoditas: find(['_3_Komoditas']),
+    kegiatan: find(['4. Nama/Jenis Kegiatan']), kegiatanLain: find(['_4_17_Kegiatan_Lainnya', 'Kegiatan_Lainya']),
+    pelapor: find(['_5_Dilaporkan_Oleh']), tanggal: find(['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan']), lokasi: find(['_7_Lokasi']), durasi: find(['_8_Durasi']),
+    pemudaLaki: find(['group_rn3xe30/_9_1_Pemuda_Laki_Lak_ia_kurang_dari_35_th', 'group_rn3xe30/_9a_Pemuda_Laki2_35_th']),
+    pemudaPerempuan: find(['group_rn3xe30/_9_2_Pemuda_Perempua_ia_kurang_dari_35_th', 'group_rn3xe30/_9b_Pemuda_Perempuan_35_th']),
+    dewasaLaki: find(['group_rn3xe30/_9_3_Laki_Laki_usia_lebih_dari_35_th', 'group_rn3xe30/_9c_Laki_35_th']),
+    dewasaPerempuan: find(['group_rn3xe30/_9_4_Perempuan_usia_lebih_dari_35_th', 'group_rn3xe30/_9d_Perempuan_35_th']),
+    hasil: find(['_10_Hasil_dari_kegiatan', '_10_Hasil_Dari_Kegiatan']),
+    produksi: find(['group_uc9ij19/_11_1_PENGEMBANGAN_P_ODUKSI_BERKELANJUTAN', 'group_uc9ij19/A_PENGEMBANGAN_PRODUKSI_BERKELANJUTAN']),
+    ekonomi: find(['group_uc9ij19/_11_2_PENGUATAN_KEL_NOMI_DAN_AKSES_PASAR', 'group_uc9ij19/B_PENGUATAN_KELEMBA_NOMI_DAN_AKSES_PASAR']),
+    kapasitas: find(['group_uc9ij19/_11_3_PENINGKATAN_KA_S_DAN_KAMPANYE_MEDIA', 'group_uc9ij19/C_PENINGKATAN_KAPAS_SDM_DAN_INKLUSIFITAS']),
+    advokasi: find(['group_uc9ij19/_11_4_ADVOKASI_DAN_KEBIJAKAN', 'group_uc9ij19/D_ADVOKASI_DAN_KEBIJAKAN']),
+    biayaAktual: find(['_12_Pembiayaan_Aktual_Rp']), swadaya: find(['_14_Kontribusi_Organisasi_Swadaya_Rp', '_14_Kontribusi_Orgaisasi_Suwadaya_Rp']),
+    lembagaLain: find(['_13_Lembaga_Lainnya']), absensi: findAll(['group_ty8ag48/_15_1_File_absen_1', 'group_ty8ag48/_15_2_File_absen_2', 'group_ty8ag48/_15_3_File_absen_3', '_15_Upload_Absen_Kegiatan']), foto: findAll(['group_ea59f89/_16_1_Foto_kegiatan_1', 'group_ea59f89/_16_2_Foto_kegiatan_2', 'group_ea59f89/_16_3_Foto_kegiatan', '_16_Upload_Foto_Kegiatan']), gps: find(['_17_Record_your_current_location', '_geolocation']),
+    kabupaten: find(['Kabupaten', 'District', 'Kota'])
   };
 }
 
-function normalizePhotoValue_(value) {
-  if (!value && value !== 0) return [];
-  var raw = String(value || "");
-  var candidates = raw.split(/[\n,;]+/).map(function (item) {
-    return String(item || "").trim();
-  }).filter(function (item) {
-    return item && (item.indexOf('http://') === 0 || item.indexOf('https://') === 0 || item.indexOf('drive.google.com') !== -1 || item.indexOf('docs.google.com') !== -1);
+function getDashboardData() {
+  var values = getSaggdSheetApi_().getDataRange().getValues();
+  if (values.length < 2) throw new Error('Sheet SAGGD belum memiliki data laporan.');
+  var headers = values[0].map(function (value) { return String(value || '').trim(); });
+  var cols = resolveSaggdColumns_(headers);
+  var rows = values.slice(1).filter(function (row) { return row.some(function (value) { return value !== '' && value != null; }); });
+  var organizations = {}, activities = {}, districts = {}, totalPeserta = 0, totalPembiayaan = 0;
+  var table = rows.slice().reverse().map(function (row) {
+    var kegiatan = textSaggd_(cellSaggd_(row, cols.kegiatan));
+    if (/lainnya|lainya|4\.16/i.test(kegiatan)) kegiatan = textSaggd_(cellSaggd_(row, cols.kegiatanLain), 'Kegiatan lainnya');
+    var organisasi = textSaggd_(cellSaggd_(row, cols.organisasi), '-');
+    var kabupaten = textSaggd_(cellSaggd_(row, cols.kabupaten), '-');
+    var aktual = numberSaggd_(cellSaggd_(row, cols.biayaAktual)), swadaya = numberSaggd_(cellSaggd_(row, cols.swadaya));
+    var peserta = { pemudaLaki: String(numberSaggd_(cellSaggd_(row, cols.pemudaLaki))), pemudaPr: String(numberSaggd_(cellSaggd_(row, cols.pemudaPerempuan))), dewasaLaki: String(numberSaggd_(cellSaggd_(row, cols.dewasaLaki))), dewasaPr: String(numberSaggd_(cellSaggd_(row, cols.dewasaPerempuan))) };
+    totalPeserta += numberSaggd_(peserta.pemudaLaki) + numberSaggd_(peserta.pemudaPr) + numberSaggd_(peserta.dewasaLaki) + numberSaggd_(peserta.dewasaPr);
+    totalPembiayaan += aktual + swadaya;
+    organizations[organisasi.toLowerCase()] = organisasi; activities[kegiatan.toLowerCase()] = kegiatan; if (kabupaten !== '-') districts[kabupaten.toLowerCase()] = kabupaten;
+    var point = pointSaggd_(cellSaggd_(row, cols.gps));
+    return { lokasi: textSaggd_(cellSaggd_(row, cols.lokasi), textSaggd_(cellSaggd_(row, cols.lokasiProgram), '-')), organisasi: organisasi, kabupaten: kabupaten, komoditas: textSaggd_(cellSaggd_(row, cols.komoditas), '-'), jenisKegiatan: kegiatan, pelapor: textSaggd_(cellSaggd_(row, cols.pelapor), '-'), tanggal: dateSaggd_(cellSaggd_(row, cols.tanggal)), durasi: textSaggd_(cellSaggd_(row, cols.durasi), '-'), peserta: peserta, hasil: textSaggd_(cellSaggd_(row, cols.hasil), '-'), indikator: { produksi: textSaggd_(cellSaggd_(row, cols.produksi), '-'), ekonomi: textSaggd_(cellSaggd_(row, cols.ekonomi), '-'), kapasitas: textSaggd_(cellSaggd_(row, cols.kapasitas), '-'), advokasi: textSaggd_(cellSaggd_(row, cols.advokasi), '-') }, pembiayaanAktual: aktual, biayaSwadaya: swadaya, biayaLembagaLain: 0, totalPembiayaanItem: aktual + swadaya, lembagaLainNama: textSaggd_(cellSaggd_(row, cols.lembagaLain), '-'), fotoAbsensi: photoListSaggd_(cellSaggd_(row, cols.absensi)), fotoKegiatan: photoListSaggd_(cellSaggd_(row, cols.foto)), lat: point.lat, lng: point.lng };
   });
-  if (candidates.length === 0) return [];
-  var unique = {};
-  candidates.forEach(function (item) {
-    unique[item] = true;
-  });
-  return Object.keys(unique);
-}
-
-function uniqueActivityNames_(items) {
-  var names = {};
-  items.forEach(function (item) {
-    var name = String(item.jenisKegiatan || "-").replace(/\s+/g, " ").trim();
-    var key = name.toLowerCase();
-    if (name && !names[key]) names[key] = name;
-  });
-  return Object.keys(names).map(function (key) { return names[key]; }).sort();
-}
-
-function uniqueStringValues_(values) {
-  var unique = {};
-  values.forEach(function (value) {
-    var text = String(value || "-").replace(/\s+/g, " ").trim();
-    var key = text.toLowerCase();
-    if (text && text !== "-" && !unique[key]) unique[key] = text;
-  });
-  return Object.keys(unique).map(function (key) { return unique[key]; }).sort();
+  function sortedValues(object) { return Object.keys(object).map(function (key) { return object[key]; }).sort(); }
+  return { kpi: { totalKegiatan: rows.length, totalPeserta: totalPeserta, totalPembiayaan: totalPembiayaan, totalOrganisasi: Object.keys(organizations).length }, filterOptions: { kegiatan: sortedValues(activities), organisasi: sortedValues(organizations), kabupaten: sortedValues(districts) }, table: table };
 }
 
 function getPhotoData(fileId) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(String(fileId || ""))) {
-    throw new Error("ID foto tidak valid.");
-  }
-  const file = DriveApp.getFileById(fileId);
-  const blob = file.getThumbnail() || file.getBlob();
-  const type = blob.getContentType();
-  if (type.indexOf("image/") !== 0) throw new Error("Dokumentasi bukan file gambar.");
-  return "data:" + type + ";base64," + Utilities.base64Encode(blob.getBytes());
+  if (!/^[a-zA-Z0-9_-]+$/.test(String(fileId || ''))) throw new Error('ID foto tidak valid.');
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getThumbnail() || file.getBlob();
+  if (blob.getContentType().indexOf('image/') !== 0) throw new Error('Dokumentasi bukan file gambar.');
+  return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }

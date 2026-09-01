@@ -7,6 +7,30 @@ var SAGGD_KOBO_CONFIG = {
   baseUrl: 'https://kf.kobotoolbox.org'
 };
 
+// Alias menjaga data form lama dan form Kobo yang diperbarui tetap masuk ke
+// kolom yang sama. Key pertama adalah header lama di Sheet; nilai berikutnya
+// adalah key submission Kobo yang ekuivalen.
+var SAGGD_HEADER_ALIASES = {
+  '_2_Nama_Organisasi': ['_2_Nama_Organisasi'],
+  '_6_Tanggal_Pelaksanan': ['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan'],
+  '_6_Tanggal_Pelaksanaan': ['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan'],
+  'group_rn3xe30/_9a_Pemuda_Laki2_35_th': ['group_rn3xe30/_9_1_Pemuda_Laki_Lak_ia_kurang_dari_35_th', 'group_rn3xe30/_9a_Pemuda_Laki2_35_th'],
+  'group_rn3xe30/_9b_Pemuda_Perempuan_35_th': ['group_rn3xe30/_9_2_Pemuda_Perempua_ia_kurang_dari_35_th', 'group_rn3xe30/_9b_Pemuda_Perempuan_35_th'],
+  'group_rn3xe30/_9c_Laki_35_th': ['group_rn3xe30/_9_3_Laki_Laki_usia_lebih_dari_35_th', 'group_rn3xe30/_9c_Laki_35_th'],
+  'group_rn3xe30/_9d_Perempuan_35_th': ['group_rn3xe30/_9_4_Perempuan_usia_lebih_dari_35_th', 'group_rn3xe30/_9d_Perempuan_35_th'],
+  '_10_Hasil_Dari_Kegiatan': ['_10_Hasil_dari_kegiatan', '_10_Hasil_Dari_Kegiatan'],
+  'group_uc9ij19/A_PENGEMBANGAN_PRODUKSI_BERKELANJUTAN': ['group_uc9ij19/_11_1_PENGEMBANGAN_P_ODUKSI_BERKELANJUTAN', 'group_uc9ij19/A_PENGEMBANGAN_PRODUKSI_BERKELANJUTAN'],
+  'group_uc9ij19/B_PENGUATAN_KELEMBA_NOMI_DAN_AKSES_PASAR': ['group_uc9ij19/_11_2_PENGUATAN_KEL_NOMI_DAN_AKSES_PASAR', 'group_uc9ij19/B_PENGUATAN_KELEMBA_NOMI_DAN_AKSES_PASAR'],
+  'group_uc9ij19/C_PENINGKATAN_KAPAS_SDM_DAN_INKLUSIFITAS': ['group_uc9ij19/_11_3_PENINGKATAN_KA_S_DAN_KAMPANYE_MEDIA', 'group_uc9ij19/C_PENINGKATAN_KAPAS_SDM_DAN_INKLUSIFITAS'],
+  'group_uc9ij19/D_ADVOKASI_DAN_KEBIJAKAN': ['group_uc9ij19/_11_4_ADVOKASI_DAN_KEBIJAKAN', 'group_uc9ij19/D_ADVOKASI_DAN_KEBIJAKAN'],
+  '_14_Kontribusi_Orgaisasi_Suwadaya_Rp': ['_14_Kontribusi_Organisasi_Swadaya_Rp', '_14_Kontribusi_Orgaisasi_Suwadaya_Rp'],
+  '_14_Kontribusi_Organisasi_Swadaya_Rp': ['_14_Kontribusi_Organisasi_Swadaya_Rp', '_14_Kontribusi_Orgaisasi_Suwadaya_Rp'],
+  '_15_Upload_Absen_Kegiatan': ['group_ty8ag48/_15_1_File_absen_1', 'group_ty8ag48/_15_2_File_absen_2', 'group_ty8ag48/_15_3_File_absen_3', '_15_Upload_Absen_Kegiatan'],
+  '_16_Upload_Foto_Kegiatan': ['group_ea59f89/_16_1_Foto_kegiatan_1', 'group_ea59f89/_16_2_Foto_kegiatan_2', 'group_ea59f89/_16_3_Foto_kegiatan', '_16_Upload_Foto_Kegiatan'],
+  'Kegiatan_Lainya': ['_4_17_Kegiatan_Lainnya', 'Kegiatan_Lainya'],
+  '_4_17_Kegiatan_Lainnya': ['_4_17_Kegiatan_Lainnya', 'Kegiatan_Lainya']
+};
+
 function getSaggdKoboToken_() {
   return PropertiesService.getScriptProperties().getProperty('SAGGD_KOBO_TOKEN') || SAGGD_KOBO_CONFIG.token;
 }
@@ -32,6 +56,54 @@ function getSaggdHeaderSheet_() {
   if (!spreadsheet) throw new Error('Spreadsheet aktif tidak ditemukan.');
   return spreadsheet.getSheetByName(SAGGD_KOBO_CONFIG.headerSheetName) ||
     spreadsheet.insertSheet(SAGGD_KOBO_CONFIG.headerSheetName);
+}
+
+function normalizeSaggdKey_(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
+
+function submissionValueForHeader_(submission, sheetHeader, labelMap, reverseLabelMap) {
+  var header = String(sheetHeader || '').trim();
+  var candidates = [];
+  function add(candidate) {
+    if (candidate && candidates.indexOf(candidate) === -1) candidates.push(candidate);
+  }
+  add(header);
+  add(reverseLabelMap[header]);
+  (SAGGD_HEADER_ALIASES[header] || []).forEach(add);
+
+  // Header baru kadang sudah merupakan label pertanyaan Kobo, sehingga cari
+  // berdasarkan nama internal dan versi normalisasinya sebagai fallback.
+  Object.keys(labelMap).forEach(function (key) {
+    if (normalizeSaggdKey_(labelMap[key]) === normalizeSaggdKey_(header)) add(key);
+  });
+  var submissionKeys = Object.keys(submission);
+  candidates.forEach(function (candidate) {
+    if (Object.prototype.hasOwnProperty.call(submission, candidate) && submission[candidate] !== '' && submission[candidate] != null) {
+      return;
+    }
+  });
+  for (var i = 0; i < candidates.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(submission, candidates[i])) return submission[candidates[i]];
+  }
+  var normalizedHeader = normalizeSaggdKey_(header);
+  for (var j = 0; j < submissionKeys.length; j++) {
+    if (normalizeSaggdKey_(submissionKeys[j]) === normalizedHeader) return submission[submissionKeys[j]];
+  }
+  return '';
+}
+
+function formatSaggdKoboValue_(value, choiceMap) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') return typeof value === 'object' ? JSON.stringify(value) : value;
+  var text = value.trim();
+  if (!text) return '';
+  if (choiceMap[text] || choiceMap[normalizeSaggdKey_(text)]) return choiceMap[text] || choiceMap[normalizeSaggdKey_(text)];
+  var parts = text.split(/\s+/);
+  if (parts.length > 1 && parts.some(function (part) { return choiceMap[part] || choiceMap[normalizeSaggdKey_(part)]; })) {
+    return parts.map(function (part) { return choiceMap[part] || choiceMap[normalizeSaggdKey_(part)] || part; }).join(', ');
+  }
+  return text;
 }
 
 // Mengambil nama field terbaru langsung dari form dan satu submission Kobo,
@@ -200,7 +272,7 @@ function tarikDataKoboOtomatis() {
   const ASSET_UID = SAGGD_KOBO_CONFIG.assetUid;
   const DRIVE_FOLDER_ID = SAGGD_KOBO_CONFIG.driveFolderId;
   const KOBO_BASE_URL = SAGGD_KOBO_CONFIG.baseUrl;
-  const MAX_DATA_PER_RUN = 10;
+  const MAX_DATA_PER_RUN = 100;
 
   // Validasi data sebelum sync (gunakan VALIDATION_UTILITIES.gs)
   // Fungsi validasiDanBersihkanSAGGD() akan deteksi & hapus duplikat header
@@ -225,9 +297,7 @@ function tarikDataKoboOtomatis() {
     muteHttpExceptions: true
   };
 
-  const normalize = function (value) {
-    return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  };
+  const normalize = normalizeSaggdKey_;
 
   let folderCache = {};
   function getOrCreateFolder(parentFolder, folderName) {
@@ -331,17 +401,31 @@ function tarikDataKoboOtomatis() {
   Logger.log(`📊 Status: ${lastRow - 1} existing rows, ${submissions.length} total in Kobo, ${existingIds.length} existing IDs`);
 
   const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const idxKegiatan = sheetHeaders.indexOf(HEADER_NAMA_KEGIATAN);
-  const idxAbsen = sheetHeaders.indexOf(HEADER_FOTO_ABSENSI);
-  const idxFotoKeg = sheetHeaders.indexOf(HEADER_FOTO_KEGIATAN);
+  const findHeaderIndexes = function (patterns) {
+    return sheetHeaders.reduce(function (indexes, header, index) {
+      const normalizedHeader = normalize(header);
+      if (patterns.some(function (pattern) { return normalizedHeader.indexOf(normalize(pattern)) !== -1; })) indexes.push(index);
+      return indexes;
+    }, []);
+  };
+  const activityIndexes = findHeaderIndexes([HEADER_NAMA_KEGIATAN, 'Nama Jenis Kegiatan']);
+  const attendancePhotoIndexes = findHeaderIndexes([HEADER_FOTO_ABSENSI, 'Upload Absen', 'File absen']);
+  const activityPhotoIndexes = findHeaderIndexes([HEADER_FOTO_KEGIATAN, 'Upload Foto Kegiatan', 'Foto Kegiatan']);
 
-  let dataBaru = submissions.filter(function (sub) {
-    return !existingIds.includes(String(sub._id));
-  });
+  const existingRowsById = {};
+  if (lastRow > 1 && sheetHeaders.indexOf('_id') > -1) {
+    const savedRows = sheet.getRange(2, 1, lastRow - 1, sheetHeaders.length).getValues();
+    savedRows.forEach(function (row, index) {
+      const id = String(row[sheetHeaders.indexOf('_id')] || '').trim();
+      if (id) existingRowsById[id] = { rowNumber: index + 2, values: row };
+    });
+  }
+  let dataBaru = submissions.filter(function (sub) { return !existingRowsById[String(sub._id)]; });
+  let dataLama = submissions.filter(function (sub) { return Boolean(existingRowsById[String(sub._id)]); });
   Logger.log(`🆕 Data baru ditemukan: ${dataBaru.length}`);
   
   // Ambil hanya MAX_DATA_PER_RUN data pertama untuk processing
-  const dataYangAkanDiproses = dataBaru.slice(0, MAX_DATA_PER_RUN);
+  const dataYangAkanDiproses = dataBaru.concat(dataLama).slice(0, MAX_DATA_PER_RUN);
   Logger.log(`📋 Data yang akan diproses: ${dataYangAkanDiproses.length} (limit: ${MAX_DATA_PER_RUN})`);
   
   if (dataBaru.length > MAX_DATA_PER_RUN) {
@@ -354,6 +438,7 @@ function tarikDataKoboOtomatis() {
   }
 
   let allNewRows = [];
+  let updatedRows = [];
   let successCount = 0;
   let failCount = 0;
 
@@ -364,38 +449,13 @@ function tarikDataKoboOtomatis() {
       let rowData = [];
 
       for (let h = 0; h < sheetHeaders.length; h++) {
-        const sheetHeader = sheetHeaders[h];
-        const originalColName = reverseLabelMap[sheetHeader] || sheetHeader;
-        let val = sub[originalColName];
-
-        if (val !== undefined && val !== null) {
-          if (typeof val === 'string') {
-            const text = val.trim();
-            if (choiceMap[text]) {
-              val = choiceMap[text];
-            } else if (choiceMap[normalize(text)]) {
-              val = choiceMap[normalize(text)];
-            } else if (text.includes(' ')) {
-              const splitVals = text.split(/\s+/);
-              if (splitVals.some(function (v) { return choiceMap[v] || choiceMap[normalize(v)]; })) {
-                val = splitVals.map(function (v) {
-                  return choiceMap[v] || choiceMap[normalize(v)] || v;
-                }).join(', ');
-              }
-            }
-          } else if (typeof val === 'object') {
-            val = JSON.stringify(val);
-          }
-        } else {
-          val = '';
-        }
-
-        rowData.push(val);
+        const value = submissionValueForHeader_(sub, sheetHeaders[h], labelMap, reverseLabelMap);
+        rowData.push(formatSaggdKoboValue_(value, choiceMap));
       }
 
       const submitDate = new Date(sub._submission_time);
       const namaBulan = monthNames[submitDate.getMonth()] + ' ' + submitDate.getFullYear();
-      const namaKegiatan = (idxKegiatan > -1 && String(rowData[idxKegiatan] || '').trim() !== '') ? String(rowData[idxKegiatan]) : 'Kegiatan Tidak Diketahui';
+      const namaKegiatan = activityIndexes.map(function (index) { return rowData[index]; }).find(function (value) { return String(value || '').trim() !== ''; }) || 'Kegiatan Tidak Diketahui';
 
       let fileMap = {};
       if (sub._attachments && sub._attachments.length > 0) {
@@ -416,9 +476,9 @@ function tarikDataKoboOtomatis() {
 
           try {
             let kategori = 'Lainnya';
-            if (idxAbsen > -1 && String(rowData[idxAbsen] || '').includes(originalFileName)) {
+            if (attendancePhotoIndexes.some(function (index) { return String(rowData[index] || '').indexOf(originalFileName) !== -1; })) {
               kategori = 'Foto Absensi';
-            } else if (idxFotoKeg > -1 && String(rowData[idxFotoKeg] || '').includes(originalFileName)) {
+            } else if (activityPhotoIndexes.some(function (index) { return String(rowData[index] || '').indexOf(originalFileName) !== -1; })) {
               kategori = 'Foto Kegiatan';
             }
 
@@ -467,7 +527,17 @@ function tarikDataKoboOtomatis() {
         }
       }
 
-      allNewRows.push(rowData);
+      const saved = existingRowsById[koboId];
+      if (saved) {
+        // Isi nilai kosong dari Kobo (misalnya tanggal pelaksanaan) tanpa
+        // menghapus data Sheet apabila Kobo memang tidak memiliki nilai.
+        const merged = rowData.map(function (value, index) {
+          return value === '' && saved.values[index] !== '' && saved.values[index] != null ? saved.values[index] : value;
+        });
+        updatedRows.push({ rowNumber: saved.rowNumber, values: merged });
+      } else {
+        allNewRows.push(rowData);
+      }
       successCount++;
 
       if ((i + 1) % 10 === 0) {
@@ -479,6 +549,9 @@ function tarikDataKoboOtomatis() {
     }
   }
 
+  updatedRows.forEach(function (item) {
+    sheet.getRange(item.rowNumber, 1, 1, item.values.length).setValues([item.values]);
+  });
   if (allNewRows.length > 0) {
     try {
       const nextRow = sheet.getLastRow() + 1;

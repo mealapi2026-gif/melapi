@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { browserSessionPersistence, getAuth, initializeAuth } from "firebase/auth";
 
 // Pastikan Anda sudah menyalin kredensial ini dari Firebase Console ke file .env.local
 const firebaseConfig = {
@@ -15,6 +15,20 @@ const firebaseConfig = {
 // Pola ini mencegah inisialisasi ganda saat Next.js melakukan hot-reloading
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
+// Firebase Auth local persistence menggunakan IndexedDB. Pada dev mode
+// Turbopack, ketika tab sedang hidden/di-refresh, SDK dapat mencoba membuka
+// database yang sedang ditutup dan memunculkan "Database is closing/hidden".
+// Session persistence memakai sessionStorage sehingga listener auth tetap stabil
+// selama tab browser aktif tanpa bergantung pada IndexedDB.
+const auth = typeof window === "undefined"
+  ? getAuth(app)
+  : (() => {
+      try {
+        return initializeAuth(app, { persistence: browserSessionPersistence });
+      } catch {
+        // Auth mungkin telah diinisialisasi oleh modul lama saat Fast Refresh.
+        return getAuth(app);
+      }
+    })();
 
 export { app, db, auth };
