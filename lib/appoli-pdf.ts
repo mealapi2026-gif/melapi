@@ -28,8 +28,12 @@ export async function openAppoliPdf(collection: AppoliPdfCollection, id: string)
       cache: 'no-store',
     });
     if (!response.ok) {
-      const detail = await response.json().catch(() => null) as { error?: string } | null;
-      throw new Error(detail?.error || 'PDF tidak dapat dibuat.');
+      const detail = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+      const messageByCode: Record<string, string> = {
+        FIREBASE_ADMIN_NOT_CONFIGURED: 'PDF tidak dapat dibuat karena kredensial Firebase Admin belum dikonfigurasi di Vercel.',
+        PDF_BROWSER_UNAVAILABLE: 'Mesin pembuat PDF tidak tersedia di server. Coba lagi setelah deployment selesai.',
+      };
+      throw new Error(messageByCode[detail?.code || ''] || detail?.error || 'PDF tidak dapat dibuat.');
     }
 
     objectUrl = URL.createObjectURL(await response.blob());

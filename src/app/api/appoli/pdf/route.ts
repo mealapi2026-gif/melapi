@@ -23,8 +23,33 @@ async function getBrowserExecutablePath() {
       `${process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'}\\Microsoft\\Edge\\Application\\msedge.exe`,
     ].find((browserPath) => existsSync(browserPath));
     if (localBrowser) return localBrowser;
+    throw new Error('Browser Chrome atau Edge lokal tidak ditemukan. Atur PUPPETEER_EXECUTABLE_PATH untuk pengembangan lokal.');
   }
   return chromium.executablePath();
+}
+
+async function createPdfBrowser() {
+  const isLocalBrowser = process.platform === 'win32' || Boolean(process.env.PUPPETEER_EXECUTABLE_PATH);
+  // @sparticuz/chromium menyediakan chrome-headless-shell untuk environment
+  // serverless Linux. Mode `shell` diperlukan di Vercel; `true` bekerja untuk
+  // Chrome/Edge lokal tetapi dapat gagal pada binary shell di Lambda.
+  const headless = isLocalBrowser ? true : 'shell' as const;
+  if (!isLocalBrowser) chromium.setGraphicsMode = false;
+
+  return puppeteer.launch({
+    args: isLocalBrowser
+      ? await puppeteer.defaultArgs({ headless })
+      : await puppeteer.defaultArgs({ args: chromium.args, headless }),
+    executablePath: await getBrowserExecutablePath(),
+    headless,
+  });
+}
+
+function pdfErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  if (message.includes('Firebase Admin credentials')) return 'FIREBASE_ADMIN_NOT_CONFIGURED';
+  if (/browser|chrome|chromium|executable|spawn|headless/i.test(message)) return 'PDF_BROWSER_UNAVAILABLE';
+  return 'PDF_GENERATION_FAILED';
 }
 
 function layout(title: string, content: string, pageSize = 'A4', margin = '10mm', bodyClass = '') {
@@ -134,7 +159,7 @@ export async function GET(request: NextRequest) {
     if (!snapshot.exists) return NextResponse.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
     const data = snapshot.data() as Record<string, unknown>;
     const content = collectionName === 'analisaUsaha' ? analisaHtml(data) : collectionName === 'inspeksiICS' ? inspeksiHtmlAppsScript(data) : lahanHtml(data);
-    const browser = await puppeteer.launch({ args: chromium.args, executablePath: await getBrowserExecutablePath(), headless: true });
+    const browser = await createPdfBrowser();
     try {
       const page = await browser.newPage();
       const isInspection = collectionName === 'inspeksiICS';
@@ -144,6 +169,6 @@ export async function GET(request: NextRequest) {
     } finally { await browser.close(); }
   } catch (error) {
     console.error('Gagal membuat PDF Appoli:', error);
-    return NextResponse.json({ error: 'PDF gagal dibuat.' }, { status: 500 });
+    return NextResponse.json({ error: 'PDF gagal dibuat.', code: pdfErrorCode(error) }, { status: 500 });
   }
 }
