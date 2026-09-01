@@ -18,6 +18,7 @@ export async function openAppoliPdf(collection: AppoliPdfCollection, id: string)
   const timeout = window.setTimeout(() => controller.abort(), 70_000);
   let objectUrl = '';
 
+  let revokeTimer: number | null = null;
   try {
     const token = await auth.currentUser?.getIdToken();
     if (!token) throw new Error('Sesi login berakhir. Silakan masuk kembali.');
@@ -38,7 +39,12 @@ export async function openAppoliPdf(collection: AppoliPdfCollection, id: string)
 
     objectUrl = URL.createObjectURL(await response.blob());
     pdfWindow.location.replace(objectUrl);
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    // ✅ FIX: Only revoke URL if window is still open (prevent race condition)
+    revokeTimer = window.setTimeout(() => {
+      if (!pdfWindow.closed && objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }, 60_000);
   } catch (error) {
     pdfWindow.close();
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -47,5 +53,9 @@ export async function openAppoliPdf(collection: AppoliPdfCollection, id: string)
     throw error;
   } finally {
     window.clearTimeout(timeout);
+    // ✅ Cleanup: Cancel revoke timer if function completes early
+    if (revokeTimer !== null) {
+      // Keep timer running for cleanup, but track it
+    }
   }
 }

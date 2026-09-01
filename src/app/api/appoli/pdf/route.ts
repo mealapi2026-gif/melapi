@@ -6,7 +6,7 @@ import puppeteer from 'puppeteer-core';
 import { getAdminServices } from '../../../../../lib/firebase-admin';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120; // ✅ FIX: Increased from 60 to 120s for complex multi-page PDFs (Inspeksi ICS)
 
 const allowedCollections = new Set(['analisaUsaha', 'inspeksiICS', 'dataLahan']);
 const escapeHtml = (value: unknown) => String(value ?? '-').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[character] || character));
@@ -15,13 +15,38 @@ const cell = (value: unknown) => `<td>${escapeHtml(value || '-')}</td>`;
 const logoPath = path.join(process.cwd(), 'public', 'images', 'logo-appoli.png');
 const logoData = existsSync(logoPath) ? `data:image/png;base64,${readFileSync(logoPath).toString('base64')}` : '';
 
+// ✅ FIX: Add logo warning if not found
+if (!logoData) {
+  console.warn('⚠️ WARNING: Logo APPOLI tidak ditemukan di public/images/logo-appoli.png. PDF akan dibuat tanpa logo.');
+}
+
 async function getBrowserExecutablePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
   if (process.platform === 'win32') {
-    const localBrowser = [
+    // ✅ FIX: Check multiple Chrome/Edge paths
+    const candidateBrowsers = [
+      // Chrome - Program Files
       `${process.env.ProgramFiles || 'C:\\Program Files'}\\Google\\Chrome\\Application\\chrome.exe`,
+      // Chrome - Program Files (x86)
+      `${process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'}\\Google\\Chrome\\Application\\chrome.exe`,
+      // Chrome - LocalAppData
+      `${process.env.LOCALAPPDATA || process.env.USERPROFILE || 'C:\\Users\\%USERNAME%'}\\Google\\Chrome\\Application\\chrome.exe`,
+      // Edge - Program Files
+      `${process.env.ProgramFiles || 'C:\\Program Files'}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      // Edge - Program Files (x86)
       `${process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'}\\Microsoft\\Edge\\Application\\msedge.exe`,
-    ].find((browserPath) => existsSync(browserPath));
+      // Edge - LocalAppData
+      `${process.env.LOCALAPPDATA || process.env.USERPROFILE || 'C:\\Users\\%USERNAME%'}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    ];
+    
+    const localBrowser = candidateBrowsers.find((browserPath) => {
+      try {
+        return existsSync(browserPath);
+      } catch {
+        return false;
+      }
+    });
+    
     if (localBrowser) return localBrowser;
     throw new Error('Browser Chrome atau Edge lokal tidak ditemukan. Atur PUPPETEER_EXECUTABLE_PATH untuk pengembangan lokal.');
   }
@@ -50,6 +75,23 @@ function pdfErrorCode(error: unknown) {
   if (message.includes('Firebase Admin credentials')) return 'FIREBASE_ADMIN_NOT_CONFIGURED';
   if (/browser|chrome|chromium|executable|spawn|headless/i.test(message)) return 'PDF_BROWSER_UNAVAILABLE';
   return 'PDF_GENERATION_FAILED';
+}
+
+// ✅ FIX: Add data validation helper
+function validateFormData(collection: string, data: Record<string, unknown>) {
+  const requiredFields: Record<string, string[]> = {
+    analisaUsaha: ['namaPetani', 'idPetani', 'formData'],
+    inspeksiICS: ['namaPetani', 'idPetani', 'kriteria'],
+    dataLahan: ['namaPetani', 'idPetani'],
+  };
+  
+  const required = requiredFields[collection] || [];
+  const missing = required.filter((key) => !data[key]);
+  
+  if (missing.length > 0) {
+    console.warn(`⚠️ WARNING: Data ${collection} tidak lengkap. Fields yang kosong: ${missing.join(', ')}`);
+    // Don't throw - allow partial data to still generate PDF
+  }
 }
 
 function layout(title: string, content: string, pageSize = 'A4', margin = '10mm', bodyClass = '') {
@@ -158,15 +200,30 @@ export async function GET(request: NextRequest) {
     const snapshot = await adminDb.collection(collectionName).doc(id).get();
     if (!snapshot.exists) return NextResponse.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
     const data = snapshot.data() as Record<string, unknown>;
+    
+    // ✅ FIX: Validate form data before PDF generation
+    validateFormData(collectionName, data);
+    
     const content = collectionName === 'analisaUsaha' ? analisaHtml(data) : collectionName === 'inspeksiICS' ? inspeksiHtmlAppsScript(data) : lahanHtml(data);
-    const browser = await createPdfBrowser();
+    
+    // ✅ FIX: Better browser creation error handling
+    let browser;
+    try {
+      browser = await createPdfBrowser();
+    } catch (browserError) {
+      console.error('Browser initialization failed:', browserError);
+      throw new Error(`Browser tidak dapat diinisialisasi: ${browserError instanceof Error ? browserError.message : 'Unknown error'}`);
+    }
+    
     try {
       const page = await browser.newPage();
       const isInspection = collectionName === 'inspeksiICS';
       await page.setContent(layout(collectionName === 'analisaUsaha' ? 'ANALISA USAHA TANI' : isInspection ? 'FORMULIR INSPEKSI INTERNAL' : 'FORMULIR PENDATAAN PETANI DAN LAHAN', content, isInspection ? '8.5in 14in' : 'A4', isInspection ? '0.5in' : '10mm', isInspection ? 'inspection' : collectionName === 'analisaUsaha' ? 'analisa' : ''), { waitUntil: 'load' });
       const pdf = await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
       return new NextResponse(Buffer.from(pdf), { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${collectionName}-${id}.pdf"`, 'Cache-Control': 'no-store' } });
-    } finally { await browser.close(); }
+    } finally { 
+      await browser.close(); 
+    }
   } catch (error) {
     console.error('Gagal membuat PDF Appoli:', error);
     return NextResponse.json({ error: 'PDF gagal dibuat.', code: pdfErrorCode(error) }, { status: 500 });
