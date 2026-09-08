@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+  serverExternalPackages: ['firebase-admin', '@sparticuz/chromium', 'puppeteer-core'],
   outputFileTracingIncludes: {
     '/api/appoli/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
   },
