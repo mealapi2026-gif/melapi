@@ -12,9 +12,6 @@ import {
   Search, 
   Menu, 
   X,
-  Calculator,
-  ClipboardCheck,
-  Map,
   Shield,
   UsersRound
 } from 'lucide-react';
@@ -24,10 +21,6 @@ import { hasMenuPermission, MENU_CONFIG, getUserProfileByUid, getVisibleMenuKeys
 import logoSimApi from '../../../public/images/logo-sim-api.png';
 
 const routeMenuKeys: Array<[string, MenuKey]> = [
-  ['/dashboard/appoli/profil-petani', 'profil-petani'],
-  ['/dashboard/appoli/analisa-usaha', 'analisa-usaha'],
-  ['/dashboard/appoli/inspeksi-ics', 'inspeksi-ics'],
-  ['/dashboard/appoli/data-lahan', 'data-lahan'],
   ['/dashboard/kinerja-enumerator', 'kinerja-enumerator'],
   ['/dashboard/appoli', 'appoli'],
 ];
@@ -131,9 +124,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     baseline: { icon: Search, label: 'BASELINE', href: '/dashboard/baseline' },
     saggd: { icon: LineChart, label: 'SAGGD', href: '/dashboard/saggd' },
     appoli: { icon: LayoutDashboard, label: 'DASHBOARD APPOLI', href: '/dashboard/appoli' },
-    'analisa-usaha': { icon: Calculator, label: 'ANALISA USAHA', href: '/dashboard/appoli/analisa-usaha' },
-    'inspeksi-ics': { icon: ClipboardCheck, label: 'INSPEKSI ICS', href: '/dashboard/appoli/inspeksi-ics' },
-    'data-lahan': { icon: Map, label: 'DATA & LAHAN', href: '/dashboard/appoli/data-lahan' },
     'kinerja-enumerator': { icon: UsersRound, label: 'KINERJA ENUMERATOR', href: '/dashboard/kinerja-enumerator' },
     'admin-users': { icon: Shield, label: 'MANAJEMEN USER', href: '/dashboard/admin/users' },
   };

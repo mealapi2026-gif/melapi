@@ -7,10 +7,7 @@ import {
   LayoutDashboard, 
   LineChart, 
   Search,
-  Users,           // Icon untuk Profil Petani
-  Calculator,      // Icon untuk Analisa Usaha
-  ClipboardCheck,  // Icon untuk Inspeksi ICS
-  Map              // Icon untuk Data Lahan
+  Users
 } from 'lucide-react';
 import logoSimApi from '../../../public/images/logo-sim-api.png';
 
@@ -63,33 +60,11 @@ export default function DashboardSidebar() {
               DASHBOARD APPOLI
             </Link>
 
-            <Link href="/dashboard/appoli/profil-petani" className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 ${isActive('/dashboard/appoli/profil-petani') ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
-              <Users className={`w-5 h-5 ${isActive('/dashboard/appoli/profil-petani') ? 'text-emerald-600' : 'text-slate-400'}`} />
-              PROFIL PETANI
+            <Link href="/dashboard/admin/users" className="flex items-center gap-3 rounded-lg px-4 py-2 text-slate-700 transition-colors hover:bg-emerald-50 hover:text-emerald-700">
+              <Users className="h-5 w-5" />
+              <span className="font-medium">Manajemen User</span>
             </Link>
 
-            <Link href="/dashboard/appoli/analisa-usaha" className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 ${isActive('/dashboard/appoli/analisa-usaha') ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
-              <Calculator className={`w-5 h-5 ${isActive('/dashboard/appoli/analisa-usaha') ? 'text-emerald-600' : 'text-slate-400'}`} />
-              ANALISA USAHA
-            </Link>
-
-            <Link href="/dashboard/appoli/inspeksi-ics" className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 ${isActive('/dashboard/appoli/inspeksi-ics') ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
-              <ClipboardCheck className={`w-5 h-5 ${isActive('/dashboard/appoli/inspeksi-ics') ? 'text-emerald-600' : 'text-slate-400'}`} />
-              INSPEKSI ICS
-            </Link>
-
-            <Link href="/dashboard/appoli/data-lahan" className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 ${isActive('/dashboard/appoli/data-lahan') ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
-              <Map className={`w-5 h-5 ${isActive('/dashboard/appoli/data-lahan') ? 'text-emerald-600' : 'text-slate-400'}`} />
-              DATA & LAHAN
-            </Link>
-
-            <Link 
-    href="/dashboard/admin/users" 
-    className="flex items-center gap-3 px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg transition-colors"
-  >
-    <Users className="w-5 h-5" />
-    <span className="font-medium">Manajemen User</span>
-  </Link>
           </div>
         </nav>
 
