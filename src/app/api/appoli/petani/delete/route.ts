@@ -5,6 +5,9 @@ const ADMIN_EMAIL = 'dionyyr@gmail.com';
 const ADMIN_UID = 'Zm6IBgsvXkO9pBRmJlKbJ3YicnA3';
 
 export async function POST(request: Request) {
+  return NextResponse.json({ error: 'Dashboard Appoli di monitoring-petani bersifat read-only.' }, { status: 403 });
+
+  /*
   try {
     const { adminAuth, adminDb } = getAdminServices();
     const authorization = request.headers.get('authorization');
@@ -30,4 +33,5 @@ export async function POST(request: Request) {
     console.error('Farmer profile deletion failed:', error);
     return NextResponse.json({ error: 'Gagal menghapus profil petani.' }, { status: 500 });
   }
+  */
 }
