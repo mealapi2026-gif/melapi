@@ -18,6 +18,7 @@ function doGet(e) {
       province: params.province || '', commodity: params.commodity || '',
       district: params.district || '', subdistrict: params.subdistrict || '',
       village: params.village || '', enumerator: params.enumerator || '',
+      cooperative: params.cooperative || '',
       onlyDuplicates: params.onlyDuplicates === 'true'
     };
     var data;
@@ -76,6 +77,7 @@ function getFilterOptions(filters, dataset) {
     districts: uniqueValues_(provinceRows, dataset.columns.district),
     subdistricts: uniqueValues_(districtRows, dataset.columns.subdistrict),
     villages: uniqueValues_(subdistrictRows, dataset.columns.village),
+    cooperatives: uniqueValues_(dataset.rows, dataset.columns.cooperative),
     enumerators: uniqueValues_(dataset.rows, dataset.columns.enumerator),
     total: dataset.rows.length
   };
@@ -745,6 +747,7 @@ function resolveColumns_(headers) {
     village: find(['4 9 desa kelurahan', 'desa kelurahan', 'desa', 'kelurahan', 'village']),
     farmerName: find(['4 1 nama lengkap', 'nama lengkap', 'nama petani', 'nama responden']),
     enumerator: find(['3 1 nama petugas', 'nama petugas', 'petugas', 'pencacah', 'enumerator']),
+    cooperative: findExact(['nama koperasi', 'koperasi']),
     commodity: find(['5 1 apa komoditas utama yang sedang diusahakan petani saat ini', 'komoditas utama', 'komoditas usaha utama', 'apa komoditas utama', 'nama komoditas utama']),
     gender: find(['4 4 jenis kelamin', 'jenis kelamin', 'kelamin']), birthDate: find(['4 3 tanggal lahir', 'tanggal lahir', 'ttl']), age: age, maritalStatus: find(['4 5 status perkawinan', 'status perkawinan', 'status menikah']),
     education: find(['4 11 pendidikan terakhir', '_4 11 pendidikan terakhir', 'pendidikan terakhir', 'tingkat pendidikan']), farmerGroup: find(['4 12 nama kelompok tani', 'nama kelompok tani', 'kelompok tani']),
@@ -797,7 +800,8 @@ function filterRows_(rows, cols, filters) {
       matchesFilterValue_(commodityFor_(valueFor_(row, cols.commodity)), filters.commodity) &&
       matchesFilterValue_(valueFor_(row, cols.district), filters.district) &&
       matchesFilterValue_(valueFor_(row, cols.subdistrict), filters.subdistrict) &&
-      matchesFilterValue_(valueFor_(row, cols.village), filters.village);
+      matchesFilterValue_(valueFor_(row, cols.village), filters.village) &&
+      matchesFilterValue_(valueFor_(row, cols.cooperative), filters.cooperative);
   });
 }
 
@@ -808,7 +812,8 @@ function filterTableRows_(rows, cols, filters) {
       matchesFilterValue_(valueFor_(row, cols.enumerator), filters.enumerator) &&
       matchesFilterValue_(commodityFor_(valueFor_(row, cols.commodity)), filters.commodity) &&
       matchesFilterValue_(valueFor_(row, cols.subdistrict), filters.subdistrict) &&
-      matchesFilterValue_(valueFor_(row, cols.village), filters.village);
+      matchesFilterValue_(valueFor_(row, cols.village), filters.village) &&
+      matchesFilterValue_(valueFor_(row, cols.cooperative), filters.cooperative);
   });
 }
 

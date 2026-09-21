@@ -260,6 +260,7 @@ function tarikDataKoboOtomatis() {
   for (let i = 0; i < dataYangAkanDiproses.length; i++) {
     const sub = dataYangAkanDiproses[i];
     const koboId = String(sub._id);
+    const saved = existingRows[submissionIdentity(sub)];
 
     let rowData = [];
     for (let h = 0; h < sheetHeaders.length; h++) {
@@ -273,6 +274,9 @@ function tarikDataKoboOtomatis() {
         } else if (typeof val === 'object') {
           val = JSON.stringify(val); 
         }
+      } else if (saved) {
+        // Pertahankan kolom tambahan yang dikelola manual di spreadsheet.
+        val = saved.values[h] == null ? "" : saved.values[h];
       } else {
         val = ""; 
       }
@@ -369,7 +373,6 @@ function tarikDataKoboOtomatis() {
       }
     }
 
-    const saved = existingRows[submissionIdentity(sub)];
     if (saved) {
       repairedRows.push({ rowNumber: saved.rowNumber, values: rowData });
     } else {

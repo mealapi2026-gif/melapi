@@ -79,6 +79,7 @@ type Options = {
   districts: string[];
   subdistricts: string[];
   villages: string[];
+  cooperatives: string[];
 };
 type SurveyTable = {
   headers: string[];
@@ -267,12 +268,14 @@ export default function BaselinePage() {
     districts: [],
     subdistricts: [],
     villages: [],
+    cooperatives: [],
   });
   const [province, setProvince] = useState("");
   const [district, setDistrict] = useState("");
   const [subdistrict, setSubdistrict] = useState("");
   const [village, setVillage] = useState("");
   const [commodity, setCommodity] = useState("");
+  const [cooperative, setCooperative] = useState("");
   const [page, setPage] = useState(0);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -302,8 +305,8 @@ export default function BaselinePage() {
   const dataRequestRef = useRef(0);
   const mapRequestRef = useRef(0);
   const filters = useCallback(
-    () => ({ province, district, subdistrict, village, commodity }),
-    [province, district, subdistrict, village, commodity],
+    () => ({ province, district, subdistrict, village, commodity, cooperative }),
+    [province, district, subdistrict, village, commodity, cooperative],
   );
   const load = useCallback(async () => {
     const requestId = ++dataRequestRef.current;
@@ -443,7 +446,7 @@ export default function BaselinePage() {
     dimensions: [],
     distribution: [],
   };
-  const activeFilterCount = [province, district, subdistrict, village, commodity].filter(Boolean).length;
+  const activeFilterCount = [province, district, subdistrict, village, commodity, cooperative].filter(Boolean).length;
   const activeFollowUps = followUps.filter((item) => item.status !== "Selesai");
   const interventionPriorities = analytics?.interventionPriorities ?? [];
   const priorityRisk = analytics?.risks?.[0]?.label || "Belum ada risiko terpetakan";
@@ -502,6 +505,7 @@ export default function BaselinePage() {
           subdistrict: subdistrict || "",
           village: village || "",
           commodity: commodity || "",
+          cooperative: cooperative || "",
         },
         dashboard: {
           respondents: dashboard?.kpis.respondents ?? 0,
@@ -697,6 +701,16 @@ export default function BaselinePage() {
           values={options.commodities}
           empty="Semua komoditas"
         />
+        <Filter
+          label="Koperasi"
+          value={cooperative}
+          onChange={(value) => {
+            setCooperative(value);
+            setPage(0);
+          }}
+          values={options.cooperatives ?? []}
+          empty="Semua koperasi"
+        />
         <button
           type="button"
           onClick={() => {
@@ -705,6 +719,7 @@ export default function BaselinePage() {
             setSubdistrict("");
             setVillage("");
             setCommodity("");
+            setCooperative("");
             setPage(0);
           }}
           className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"
