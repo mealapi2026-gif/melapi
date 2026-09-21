@@ -225,7 +225,7 @@ const sampleTargets: SampleTarget[] = [
 const normalizeDistrict = (value: string) =>
   value
     .toLowerCase()
-    .replace(/^\d+(?:\s*\.\s*\d+)*(?:\s*[\-)]\s*)?/, "")
+    .replace(/^\d+(?:\s*\.\s*\d+)*(?:\s*[.\-)]\s*)?/, "")
     .replace(/^(kabupaten|kab\.?|kota)\s+/i, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
