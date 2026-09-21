@@ -215,7 +215,7 @@ const sampleTargets: SampleTarget[] = [
   { district: "Enrekang", target: 92, sources: ["enrekang"] },
   { district: "Polewali Mandar", target: 143, sources: ["polewali mandar"] },
   { district: "Toraja Utara", target: 120, sources: ["toraja utara", "toraja"] },
-  { district: "Tuban", target: 129, sources: ["tuban"] },
+  { district: "Tuban dan Bojonegoro", target: 129, sources: ["tuban", "bojonegoro"] },
   { district: "Boyolali", target: 182, sources: ["boyolali"] },
   { district: "Indramayu", target: 50, sources: ["indramayu"] },
   { district: "Tasikmalaya", target: 150, sources: ["tasikmalaya"] },
@@ -225,7 +225,7 @@ const sampleTargets: SampleTarget[] = [
 const normalizeDistrict = (value: string) =>
   value
     .toLowerCase()
-    .replace(/^\d+(?:\s*[.\-)]\s*)?/, "")
+    .replace(/^\d+(?:\s*\.\s*\d+)*(?:\s*[\-)]\s*)?/, "")
     .replace(/^(kabupaten|kab\.?|kota)\s+/i, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
