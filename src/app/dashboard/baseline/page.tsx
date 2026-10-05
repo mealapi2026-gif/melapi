@@ -1577,12 +1577,16 @@ export default function BaselinePage() {
             chart="donut"
           />
           <Distribution title="Risiko Utama" items={analytics?.risks} />
-          <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm 2xl:col-span-2">
-            <div className="border-b border-slate-100 p-5">
+          <section
+            data-chart
+            className="rounded-2xl border border-slate-200/60 bg-white shadow-sm 2xl:col-span-2"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
               <SectionTitle
                 title="Produktivitas, Margin, dan ROI"
                 text="Ringkasan per komoditas; tinjau outlier sebelum dipakai sebagai dasar keputusan."
               />
+              <DownloadChartButton title="Produktivitas Margin dan ROI" />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] text-left text-xs">
