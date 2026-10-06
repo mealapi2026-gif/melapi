@@ -2378,6 +2378,44 @@ function saveChartFile(url: string, fileName: string) {
   link.download = fileName;
   link.click();
 }
+async function waitForMapTiles(map: HTMLElement) {
+  const tiles = Array.from(
+    map.querySelectorAll<HTMLImageElement>("img.leaflet-tile"),
+  );
+  if (!tiles.length) throw new Error("Tile peta belum siap untuk diunduh.");
+
+  await Promise.all(
+    tiles.map(async (tile) => {
+      if (!tile.complete) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(
+            () => finish(new Error("Tile peta belum selesai dimuat.")),
+            15_000,
+          );
+          const finish = (error?: Error) => {
+            window.clearTimeout(timeout);
+            tile.removeEventListener("load", handleLoad);
+            tile.removeEventListener("error", handleError);
+            if (error) reject(error);
+            else resolve();
+          };
+          const handleLoad = () => finish();
+          const handleError = () =>
+            finish(new Error("Sebagian tile peta gagal dimuat."));
+          tile.addEventListener("load", handleLoad, { once: true });
+          tile.addEventListener("error", handleError, { once: true });
+          if (tile.complete) handleLoad();
+        });
+      }
+      if (!tile.naturalWidth)
+        throw new Error("Sebagian tile peta gagal dimuat.");
+      await tile.decode();
+    }),
+  );
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
 async function withLeafletStylesDisabled<T>(
   callback: () => Promise<T>,
 ): Promise<T> {
@@ -2414,13 +2452,18 @@ async function downloadChart(
       typeof node.getAttribute !== "function" ||
       node.getAttribute("data-export-control") !== "true",
   };
-  const image = await withLeafletStylesDisabled(async () => {
+  const capture = async () => {
+    const map = chart.querySelector<HTMLElement>(".leaflet-container");
+    if (map) await waitForMapTiles(map);
     return format === "png"
       ? await toPng(chart, options)
       : format === "jpg"
         ? await toJpeg(chart, { ...options, quality: 0.95 })
         : await toSvg(chart, options);
-  });
+  };
+  const image = chart.querySelector(".leaflet-container")
+    ? await capture()
+    : await withLeafletStylesDisabled(capture);
   saveChartFile(image, chartFileName(title, format));
 }
 function DownloadChartButton({
@@ -2436,13 +2479,19 @@ function DownloadChartButton({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const save = async (button: HTMLButtonElement, format: ChartFormat) => {
+    setError("");
     setSaving(true);
     try {
       await downloadChart(button, title, format);
+      setOpen(false);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Peta gagal diunduh.",
+      );
     } finally {
       setSaving(false);
-      setOpen(false);
     }
   };
   const saveGeoJSON = () => {
@@ -2453,7 +2502,10 @@ function DownloadChartButton({
     <div data-export-control="true" className="relative">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setError("");
+          setOpen((value) => !value);
+        }}
         disabled={disabled}
         title={`Unduh ${title}`}
         aria-label={`Unduh ${title}`}
@@ -2487,6 +2539,11 @@ function DownloadChartButton({
             >
               GeoJSON
             </button>
+          )}
+          {error && (
+            <p role="alert" className="px-3 py-2 text-xs text-rose-700">
+              {error}
+            </p>
           )}
         </div>
       )}
