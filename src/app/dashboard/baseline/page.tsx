@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { toJpeg, toPng, toSvg } from "html-to-image";
+import boundaryManifest from "../../../../public/data/baseline-boundaries/manifest.json";
 import {
   Bar,
   BarChart,
@@ -64,6 +65,13 @@ type MapPoint = {
   commodity: string;
   farmerName: string;
 };
+type BoundaryProperties = Record<string, unknown>;
+type BoundaryFeature = { properties?: BoundaryProperties };
+type BoundaryCollection = {
+  type: "FeatureCollection";
+  features: BoundaryFeature[];
+};
+type BoundaryRegion = (typeof boundaryManifest.regions)[number];
 type Dashboard = {
   total: number;
   kpis: {
@@ -230,6 +238,98 @@ const normalizeDistrict = (value: string) =>
     .replace(/^(kabupaten|kab\.?|kota)\s+/i, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+const normalizeBoundaryName = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^\d+(?:\s*\.\s*\d+)*(?:\s*[.\-)]\s*)?/, "")
+    .replace(
+      /^(kabupaten|kab\.?|kota|kecamatan|kec\.?|desa|kelurahan|kel\.?)\s+/i,
+      "",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+const normalizeProvinceName = (value: string) =>
+  normalizeBoundaryName(value).replace(/^d i /, "daerah istimewa ").replace(
+    /^di /,
+    "daerah istimewa ",
+  );
+let boundaryCache:
+  | { path: string; request: Promise<BoundaryCollection> }
+  | undefined;
+function loadBoundaryFile(path: string): Promise<BoundaryCollection> {
+  if (boundaryCache?.path === path) return boundaryCache.request;
+  const request = fetch(path, { cache: "force-cache" }).then(async (response) => {
+    if (!response.ok)
+      throw new Error(`Berkas batas wilayah gagal dimuat (${response.status}).`);
+    if (typeof DecompressionStream === "undefined")
+      throw new Error("Browser ini belum mendukung pembacaan data batas wilayah.");
+    const compressed = await response.arrayBuffer();
+    const decompressed = new Blob([compressed])
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"));
+    const data: unknown = await new Response(decompressed).json();
+    if (
+      !data ||
+      typeof data !== "object" ||
+      !("features" in data) ||
+      !Array.isArray(data.features)
+    )
+      throw new Error("Format data batas wilayah tidak valid.");
+    return data as BoundaryCollection;
+  });
+  boundaryCache = { path, request };
+  request.catch(() => {
+    if (boundaryCache?.path === path) boundaryCache = undefined;
+  });
+  return request;
+}
+async function loadMapBoundaries(
+  province: string,
+  district: string,
+  subdistrict: string,
+  village: string,
+): Promise<BoundaryCollection> {
+  if (!province) {
+    if (district || subdistrict || village)
+      throw new Error(
+        "Pilih provinsi terlebih dahulu untuk menampilkan batas terperinci.",
+      );
+    return loadBoundaryFile(
+      "/data/baseline-boundaries/overview/ADM1.geojson.gz",
+    );
+  }
+  const region = boundaryManifest.regions.find(
+    (item: BoundaryRegion) =>
+      normalizeProvinceName(item.name) === normalizeProvinceName(province),
+  );
+  if (!region)
+    throw new Error(
+      `Batas untuk ${province} tidak tersedia dalam dataset referensi 2019.`,
+    );
+  const level = village || subdistrict ? "ADM4" : district ? "ADM3" : "ADM2";
+  const path = `/data/baseline-boundaries/${region.slug}/${level}.geojson.gz`;
+  const data = await loadBoundaryFile(path);
+  const selectedDistrict = normalizeBoundaryName(district);
+  const selectedSubdistrict = normalizeBoundaryName(subdistrict);
+  const selectedVillage = normalizeBoundaryName(village);
+  const features = data.features.filter((feature) => {
+    const properties = feature.properties ?? {};
+    const matches = (key: string, selected: string) => {
+      const value = properties[key];
+      return (
+        !selected ||
+        (typeof value === "string" &&
+          normalizeBoundaryName(value) === selected)
+      );
+    };
+    return (
+      matches("adm2_name", selectedDistrict) &&
+      matches("adm3_name", selectedSubdistrict) &&
+      matches("adm4_name", selectedVillage)
+    );
+  });
+  return { ...data, features };
+}
 const escapeHtml = (value: string) =>
   value.replace(
     /[&<>'"]/g,
@@ -946,7 +1046,13 @@ export default function BaselinePage() {
           text="Sebaran wilayah, lokasi geotag, luas, status penguasaan lahan, sumber air, dan risiko pencemaran."
         />
         <div className="grid gap-5 xl:grid-cols-3">
-          <LeafletMap points={mapPoints} />
+          <LeafletMap
+            points={mapPoints}
+            province={province}
+            district={district}
+            subdistrict={subdistrict}
+            village={village}
+          />
           <article className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
             <SectionTitle
               title="Ringkasan Lahan"
@@ -2636,15 +2742,33 @@ type LeafletLayer = {
   addTo: (target: unknown) => LeafletLayer;
   bindPopup: (html: string) => LeafletLayer;
 };
+type LeafletBounds = { isValid: () => boolean };
+type LeafletBoundaryLayer = {
+  addTo: (target: unknown) => LeafletBoundaryLayer;
+  getBounds: () => LeafletBounds;
+};
 type LeafletMapInstance = {
   setView: (center: number[], zoom: number) => LeafletMapInstance;
-  fitBounds: (bounds: number[][], options?: object) => LeafletMapInstance;
+  fitBounds: (
+    bounds: number[][] | LeafletBounds,
+    options?: object,
+  ) => LeafletMapInstance;
   remove: () => void;
 };
 type LeafletRuntime = {
   map: (node: HTMLElement, options?: object) => LeafletMapInstance;
   tileLayer: (url: string, options: object) => LeafletLayer;
   circleMarker: (point: number[], options: object) => LeafletLayer;
+  geoJSON: (
+    data: BoundaryCollection,
+    options: {
+      style: Record<string, string | number>;
+      onEachFeature: (
+        feature: BoundaryFeature,
+        layer: LeafletLayer,
+      ) => void;
+    },
+  ) => LeafletBoundaryLayer;
 };
 function loadLeaflet(): Promise<LeafletRuntime> {
   return new Promise((resolve, reject) => {
@@ -2669,13 +2793,37 @@ function loadLeaflet(): Promise<LeafletRuntime> {
     if (!script.parentNode) document.body.appendChild(script);
   });
 }
-function LeafletMap({ points }: { points: MapPoint[] }) {
+function LeafletMap({
+  points,
+  province,
+  district,
+  subdistrict,
+  village,
+}: {
+  points: MapPoint[];
+  province: string;
+  district: string;
+  subdistrict: string;
+  village: string;
+}) {
   const node = useRef<HTMLDivElement>(null);
+  const [boundaryState, setBoundaryState] = useState({
+    key: "",
+    message: "",
+    error: "",
+  });
+  const boundaryKey = JSON.stringify([province, district, subdistrict, village]);
+  const boundaryMessage =
+    boundaryState.key === boundaryKey
+      ? boundaryState.message
+      : "Memuat batas wilayah...";
+  const boundaryError =
+    boundaryState.key === boundaryKey ? boundaryState.error : "";
   useEffect(() => {
     let map: LeafletMapInstance | undefined;
     let canceled = false;
     loadLeaflet()
-      .then((L) => {
+      .then(async (L) => {
         if (canceled || !node.current) return;
         map = L.map(node.current, { zoomControl: true }).setView(
           [-2.5, 118],
@@ -2711,26 +2859,105 @@ function LeafletMap({ points }: { points: MapPoint[] }) {
             valid.map((point) => [point.lat, point.lng]),
             { padding: [28, 28], maxZoom: 11 },
           );
+        try {
+          const boundaries = await loadMapBoundaries(
+            province,
+            district,
+            subdistrict,
+            village,
+          );
+          if (canceled || !map) return;
+          if (!boundaries.features.length) {
+            setBoundaryState({
+              key: boundaryKey,
+              message: "Tidak ada batas yang cocok dengan filter lokasi.",
+              error: "",
+            });
+            return;
+          }
+          const boundaryLayer = L.geoJSON(boundaries, {
+            style: {
+              color: "#047857",
+              weight: 1.5,
+              opacity: 0.9,
+              fillColor: "#34d399",
+              fillOpacity: 0.08,
+            },
+            onEachFeature: (feature, layer) => {
+              const properties = feature.properties ?? {};
+              const details: [string, unknown][] = [
+                ["Provinsi", properties.adm1_name],
+                ["Kabupaten/Kota", properties.adm2_name],
+                ["Kecamatan", properties.adm3_name],
+                ["Desa/Kelurahan", properties.adm4_name],
+              ];
+              const popup = details
+                .filter(
+                  (detail): detail is [string, string] =>
+                    typeof detail[1] === "string",
+                )
+                .map(
+                  ([label, value]) =>
+                    `<strong>${label}:</strong> ${escapeHtml(value)}`,
+                )
+                .join("<br/>");
+              if (popup) layer.bindPopup(popup);
+            },
+          }).addTo(map);
+          const bounds = boundaryLayer.getBounds();
+          if (bounds.isValid())
+            map.fitBounds(bounds, { padding: [28, 28], maxZoom: 11 });
+          setBoundaryState({
+            key: boundaryKey,
+            message: `${number(boundaries.features.length)} batas wilayah ditampilkan.`,
+            error: "",
+          });
+        } catch (cause) {
+          if (canceled) return;
+          setBoundaryState({
+            key: boundaryKey,
+            message: "",
+            error:
+              cause instanceof Error
+                ? cause.message
+                : "Batas wilayah gagal dimuat.",
+          });
+        }
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => {
+        if (canceled) return;
+        setBoundaryState({
+          key: boundaryKey,
+          message: "",
+          error: cause instanceof Error ? cause.message : "Peta gagal dimuat.",
+        });
+      });
     return () => {
       canceled = true;
       map?.remove();
     };
-  }, [points]);
+  }, [points, province, district, subdistrict, village, boundaryKey]);
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm xl:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-3 p-5">
         <div>
           <SectionTitle
             title="Peta Sebaran Responden"
-            text="Peta GPS interaktif; klik marker untuk melihat nama petani, wilayah, dan komoditas."
+            text="Peta GPS dengan batas administrasi referensi 2019; klik area atau marker untuk melihat detail."
           />
         </div>
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
           {number(points.length)} titik geotag
         </span>
       </div>
+      {(boundaryMessage || boundaryError) && (
+        <p
+          role={boundaryError ? "alert" : "status"}
+          className={`px-5 pb-3 text-xs ${boundaryError ? "text-rose-700" : "text-slate-500"}`}
+        >
+          {boundaryError || boundaryMessage}
+        </p>
+      )}
       <div ref={node} className="h-[370px] w-full bg-slate-100" />
       <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 p-4 text-xs text-slate-500">
         <span>
@@ -2745,8 +2972,16 @@ function LeafletMap({ points }: { points: MapPoint[] }) {
           <i className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-amber-900" />
           Kakao
         </span>
-        <span className="ml-auto">Sumber: koordinat GPS respons Baseline</span>
+        <span className="ml-auto">
+          Sumber GPS: respons Baseline · batas: geoBoundaries / OCHA-ROAP 2019
+          (CC BY 3.0 IGO)
+        </span>
       </div>
+      <p className="px-4 pb-4 text-[11px] text-slate-400">
+        Referensi 2019, bukan batas resmi terkini; 14 geometri desa tidak
+        terhubung ke hierarki induk dalam sumber. Verifikasi sebelum penggunaan
+        resmi.
+      </p>
     </article>
   );
 }

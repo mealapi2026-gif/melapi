@@ -1,0 +1,766 @@
+{
+  "country": "Indonesia",
+  "iso3": "IDN",
+  "data_year": 2019,
+  "source": "geoBoundaries gbHumanitarian; OCHA Regional Office for Asia and the Pacific (ROAP), HDX COD-AB",
+  "source_url": "https://data.humdata.org/dataset/cod-ab-idn",
+  "license": "Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/igo/legalcode",
+  "format": "Gzipped, simplified GeoJSON split by province and administrative level. ADM1=provinsi, ADM2=kabupaten/kota, ADM3=kecamatan, ADM4=desa/kelurahan. Parent names assigned by representative-point containment of simplified geometries. Coordinates simplified with 0.0005 degree tolerance; verify boundaries against authoritative current data before official use.",
+  "unmatched_features": {
+    "ADM4": 14
+  },
+  "regions": [
+    {
+      "slug": "aceh",
+      "name": "Aceh",
+      "files": {
+        "ADM1": "aceh/ADM1.geojson.gz",
+        "ADM2": "aceh/ADM2.geojson.gz",
+        "ADM3": "aceh/ADM3.geojson.gz",
+        "ADM4": "aceh/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 23,
+        "ADM3": 290,
+        "ADM4": 6576
+      },
+      "bounds": [
+        95.01114650000005,
+        2.004084,
+        98.28703490000004,
+        6.07693
+      ]
+    },
+    {
+      "slug": "bali",
+      "name": "Bali",
+      "files": {
+        "ADM1": "bali/ADM1.geojson.gz",
+        "ADM2": "bali/ADM2.geojson.gz",
+        "ADM3": "bali/ADM3.geojson.gz",
+        "ADM4": "bali/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 9,
+        "ADM3": 57,
+        "ADM4": 716
+      },
+      "bounds": [
+        114.43180830000006,
+        -8.848936099999946,
+        115.71156140000005,
+        -8.061467199999981
+      ]
+    },
+    {
+      "slug": "banten",
+      "name": "Banten",
+      "files": {
+        "ADM1": "banten/ADM1.geojson.gz",
+        "ADM2": "banten/ADM2.geojson.gz",
+        "ADM3": "banten/ADM3.geojson.gz",
+        "ADM4": "banten/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 8,
+        "ADM3": 155,
+        "ADM4": 1552
+      },
+      "bounds": [
+        105.09986180000004,
+        -7.016660399999978,
+        106.77989980000007,
+        -5.807418299999938
+      ]
+    },
+    {
+      "slug": "bengkulu",
+      "name": "Bengkulu",
+      "files": {
+        "ADM1": "bengkulu/ADM1.geojson.gz",
+        "ADM2": "bengkulu/ADM2.geojson.gz",
+        "ADM3": "bengkulu/ADM3.geojson.gz",
+        "ADM4": "bengkulu/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 10,
+        "ADM3": 131,
+        "ADM4": 1518
+      },
+      "bounds": [
+        101.02281160000007,
+        -5.514622,
+        103.76347840000005,
+        -2.276711
+      ]
+    },
+    {
+      "slug": "daerah-istimewa-yogyakarta",
+      "name": "Daerah Istimewa Yogyakarta",
+      "files": {
+        "ADM1": "daerah-istimewa-yogyakarta/ADM1.geojson.gz",
+        "ADM2": "daerah-istimewa-yogyakarta/ADM2.geojson.gz",
+        "ADM3": "daerah-istimewa-yogyakarta/ADM3.geojson.gz",
+        "ADM4": "daerah-istimewa-yogyakarta/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 5,
+        "ADM3": 78,
+        "ADM4": 438
+      },
+      "bounds": [
+        110.002989,
+        -8.203964399999961,
+        110.83463290000009,
+        -7.541894699999943
+      ]
+    },
+    {
+      "slug": "dki-jakarta",
+      "name": "Dki Jakarta",
+      "files": {
+        "ADM1": "dki-jakarta/ADM1.geojson.gz",
+        "ADM2": "dki-jakarta/ADM2.geojson.gz",
+        "ADM3": "dki-jakarta/ADM3.geojson.gz",
+        "ADM4": "dki-jakarta/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 6,
+        "ADM3": 46,
+        "ADM4": 270
+      },
+      "bounds": [
+        106.39056630000005,
+        -6.370833399999981,
+        106.97282430000007,
+        -5.202155499999947
+      ]
+    },
+    {
+      "slug": "gorontalo",
+      "name": "Gorontalo",
+      "files": {
+        "ADM1": "gorontalo/ADM1.geojson.gz",
+        "ADM2": "gorontalo/ADM2.geojson.gz",
+        "ADM3": "gorontalo/ADM3.geojson.gz",
+        "ADM4": "gorontalo/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 6,
+        "ADM3": 78,
+        "ADM4": 736
+      },
+      "bounds": [
+        121.16124520000005,
+        0.306258900000046,
+        123.5522946000001,
+        1.040581400000065
+      ]
+    },
+    {
+      "slug": "jambi",
+      "name": "Jambi",
+      "files": {
+        "ADM1": "jambi/ADM1.geojson.gz",
+        "ADM2": "jambi/ADM2.geojson.gz",
+        "ADM3": "jambi/ADM3.geojson.gz",
+        "ADM4": "jambi/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 11,
+        "ADM3": 143,
+        "ADM4": 1565
+      },
+      "bounds": [
+        101.12862640000009,
+        -2.770068,
+        104.49795610000007,
+        -0.733294599999965
+      ]
+    },
+    {
+      "slug": "jawa-barat",
+      "name": "Jawa Barat",
+      "files": {
+        "ADM1": "jawa-barat/ADM1.geojson.gz",
+        "ADM2": "jawa-barat/ADM2.geojson.gz",
+        "ADM3": "jawa-barat/ADM3.geojson.gz",
+        "ADM4": "jawa-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 28,
+        "ADM3": 630,
+        "ADM4": 5973
+      },
+      "bounds": [
+        106.37032330000005,
+        -7.82084,
+        108.84688140000009,
+        -5.918147699999963
+      ]
+    },
+    {
+      "slug": "jawa-tengah",
+      "name": "Jawa Tengah",
+      "files": {
+        "ADM1": "jawa-tengah/ADM1.geojson.gz",
+        "ADM2": "jawa-tengah/ADM2.geojson.gz",
+        "ADM3": "jawa-tengah/ADM3.geojson.gz",
+        "ADM4": "jawa-tengah/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 37,
+        "ADM3": 577,
+        "ADM4": 8569
+      },
+      "bounds": [
+        108.55590060000009,
+        -8.21173,
+        111.691412,
+        -5.725698
+      ]
+    },
+    {
+      "slug": "jawa-timur",
+      "name": "Jawa Timur",
+      "files": {
+        "ADM1": "jawa-timur/ADM1.geojson.gz",
+        "ADM2": "jawa-timur/ADM2.geojson.gz",
+        "ADM3": "jawa-timur/ADM3.geojson.gz",
+        "ADM4": "jawa-timur/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 38,
+        "ADM3": 667,
+        "ADM4": 8574
+      },
+      "bounds": [
+        110.89871980000004,
+        -8.78036,
+        116.27015110000002,
+        -5.048857099999964
+      ]
+    },
+    {
+      "slug": "kalimantan-barat",
+      "name": "Kalimantan Barat",
+      "files": {
+        "ADM1": "kalimantan-barat/ADM1.geojson.gz",
+        "ADM2": "kalimantan-barat/ADM2.geojson.gz",
+        "ADM3": "kalimantan-barat/ADM3.geojson.gz",
+        "ADM4": "kalimantan-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 14,
+        "ADM3": 174,
+        "ADM4": 2132
+      },
+      "bounds": [
+        108.67789120000003,
+        -3.067918499999962,
+        114.22264040000005,
+        2.081301
+      ]
+    },
+    {
+      "slug": "kalimantan-selatan",
+      "name": "Kalimantan Selatan",
+      "files": {
+        "ADM1": "kalimantan-selatan/ADM1.geojson.gz",
+        "ADM2": "kalimantan-selatan/ADM2.geojson.gz",
+        "ADM3": "kalimantan-selatan/ADM3.geojson.gz",
+        "ADM4": "kalimantan-selatan/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 13,
+        "ADM3": 152,
+        "ADM4": 2007
+      },
+      "bounds": [
+        114.3466016000001,
+        -4.744462,
+        116.5589314,
+        -1.315042299999959
+      ]
+    },
+    {
+      "slug": "kalimantan-tengah",
+      "name": "Kalimantan Tengah",
+      "files": {
+        "ADM1": "kalimantan-tengah/ADM1.geojson.gz",
+        "ADM2": "kalimantan-tengah/ADM2.geojson.gz",
+        "ADM3": "kalimantan-tengah/ADM3.geojson.gz",
+        "ADM4": "kalimantan-tengah/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 14,
+        "ADM3": 136,
+        "ADM4": 1574
+      },
+      "bounds": [
+        110.73447880000003,
+        -3.543584099999975,
+        115.84722040000008,
+        0.777833200000032
+      ]
+    },
+    {
+      "slug": "kalimantan-timur",
+      "name": "Kalimantan Timur",
+      "files": {
+        "ADM1": "kalimantan-timur/ADM1.geojson.gz",
+        "ADM2": "kalimantan-timur/ADM2.geojson.gz",
+        "ADM3": "kalimantan-timur/ADM3.geojson.gz",
+        "ADM4": "kalimantan-timur/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 10,
+        "ADM3": 103,
+        "ADM4": 1032
+      },
+      "bounds": [
+        113.83594490000007,
+        -2.405192799999952,
+        118.98899540000002,
+        2.626341600000046
+      ]
+    },
+    {
+      "slug": "kalimantan-utara",
+      "name": "Kalimantan Utara",
+      "files": {
+        "ADM1": "kalimantan-utara/ADM1.geojson.gz",
+        "ADM2": "kalimantan-utara/ADM2.geojson.gz",
+        "ADM3": "kalimantan-utara/ADM3.geojson.gz",
+        "ADM4": "kalimantan-utara/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 5,
+        "ADM3": 53,
+        "ADM4": 482
+      },
+      "bounds": [
+        114.58958660000008,
+        1.043729400000075,
+        117.98593390000008,
+        4.408291900000052
+      ]
+    },
+    {
+      "slug": "kepulauan-bangka-belitung",
+      "name": "Kepulauan Bangka Belitung",
+      "files": {
+        "ADM1": "kepulauan-bangka-belitung/ADM1.geojson.gz",
+        "ADM2": "kepulauan-bangka-belitung/ADM2.geojson.gz",
+        "ADM3": "kepulauan-bangka-belitung/ADM3.geojson.gz",
+        "ADM4": "kepulauan-bangka-belitung/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 7,
+        "ADM3": 47,
+        "ADM4": 391
+      },
+      "bounds": [
+        105.10839060000006,
+        -3.416902799999946,
+        108.84795350000007,
+        -1.501996399999939
+      ]
+    },
+    {
+      "slug": "kepulauan-riau",
+      "name": "Kepulauan Riau",
+      "files": {
+        "ADM1": "kepulauan-riau/ADM1.geojson.gz",
+        "ADM2": "kepulauan-riau/ADM2.geojson.gz",
+        "ADM3": "kepulauan-riau/ADM3.geojson.gz",
+        "ADM4": "kepulauan-riau/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 7,
+        "ADM3": 70,
+        "ADM4": 418
+      },
+      "bounds": [
+        103.28524010000007,
+        -1.298364,
+        109.16396520000006,
+        4.797765100000049
+      ]
+    },
+    {
+      "slug": "lampung",
+      "name": "Lampung",
+      "files": {
+        "ADM1": "lampung/ADM1.geojson.gz",
+        "ADM2": "lampung/ADM2.geojson.gz",
+        "ADM3": "lampung/ADM3.geojson.gz",
+        "ADM4": "lampung/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 16,
+        "ADM3": 237,
+        "ADM4": 2676
+      },
+      "bounds": [
+        103.57125420000006,
+        -6.168558299999972,
+        106.111102,
+        -3.723984199999961
+      ]
+    },
+    {
+      "slug": "maluku",
+      "name": "Maluku",
+      "files": {
+        "ADM1": "maluku/ADM1.geojson.gz",
+        "ADM2": "maluku/ADM2.geojson.gz",
+        "ADM3": "maluku/ADM3.geojson.gz",
+        "ADM4": "maluku/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 11,
+        "ADM3": 118,
+        "ADM4": 1240
+      },
+      "bounds": [
+        125.7224900000001,
+        -8.34652749999998,
+        134.90855450000004,
+        -1.378661
+      ]
+    },
+    {
+      "slug": "maluku-utara",
+      "name": "Maluku Utara",
+      "files": {
+        "ADM1": "maluku-utara/ADM1.geojson.gz",
+        "ADM2": "maluku-utara/ADM2.geojson.gz",
+        "ADM3": "maluku-utara/ADM3.geojson.gz",
+        "ADM4": "maluku-utara/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 10,
+        "ADM3": 118,
+        "ADM4": 1225
+      },
+      "bounds": [
+        124.28317240000001,
+        -2.477341099999933,
+        129.65746660000002,
+        2.645466800000065
+      ]
+    },
+    {
+      "slug": "nusa-tenggara-barat",
+      "name": "Nusa Tenggara Barat",
+      "files": {
+        "ADM1": "nusa-tenggara-barat/ADM1.geojson.gz",
+        "ADM2": "nusa-tenggara-barat/ADM2.geojson.gz",
+        "ADM3": "nusa-tenggara-barat/ADM3.geojson.gz",
+        "ADM4": "nusa-tenggara-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 10,
+        "ADM3": 116,
+        "ADM4": 1144
+      },
+      "bounds": [
+        115.8209915000001,
+        -9.109656299999926,
+        119.33527370000002,
+        -8.080054299999972
+      ]
+    },
+    {
+      "slug": "nusa-tenggara-timur",
+      "name": "Nusa Tenggara Timur",
+      "files": {
+        "ADM1": "nusa-tenggara-timur/ADM1.geojson.gz",
+        "ADM2": "nusa-tenggara-timur/ADM2.geojson.gz",
+        "ADM3": "nusa-tenggara-timur/ADM3.geojson.gz",
+        "ADM4": "nusa-tenggara-timur/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 22,
+        "ADM3": 307,
+        "ADM4": 3323
+      },
+      "bounds": [
+        118.9270782000001,
+        -11.007615099999953,
+        125.19305070000007,
+        -8.063357399999973
+      ]
+    },
+    {
+      "slug": "papua",
+      "name": "Papua",
+      "files": {
+        "ADM1": "papua/ADM1.geojson.gz",
+        "ADM2": "papua/ADM2.geojson.gz",
+        "ADM3": "papua/ADM3.geojson.gz",
+        "ADM4": "papua/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 29,
+        "ADM3": 424,
+        "ADM4": 3837
+      },
+      "bounds": [
+        134.29566290000002,
+        -9.12036269999993,
+        141.0194,
+        0.937796700000035
+      ]
+    },
+    {
+      "slug": "papua-barat",
+      "name": "Papua Barat",
+      "files": {
+        "ADM1": "papua-barat/ADM1.geojson.gz",
+        "ADM2": "papua-barat/ADM2.geojson.gz",
+        "ADM3": "papua-barat/ADM3.geojson.gz",
+        "ADM4": "papua-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 13,
+        "ADM3": 177,
+        "ADM4": 1595
+      },
+      "bounds": [
+        129.30770930000006,
+        -4.256711,
+        135.25798,
+        0.582235200000071
+      ]
+    },
+    {
+      "slug": "riau",
+      "name": "Riau",
+      "files": {
+        "ADM1": "riau/ADM1.geojson.gz",
+        "ADM2": "riau/ADM2.geojson.gz",
+        "ADM3": "riau/ADM3.geojson.gz",
+        "ADM4": "riau/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 12,
+        "ADM3": 169,
+        "ADM4": 1876
+      },
+      "bounds": [
+        100.02494040000005,
+        -1.122272799999962,
+        103.81461090000005,
+        2.883903800000041
+      ]
+    },
+    {
+      "slug": "sulawesi-barat",
+      "name": "Sulawesi Barat",
+      "files": {
+        "ADM1": "sulawesi-barat/ADM1.geojson.gz",
+        "ADM2": "sulawesi-barat/ADM2.geojson.gz",
+        "ADM3": "sulawesi-barat/ADM3.geojson.gz",
+        "ADM4": "sulawesi-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 6,
+        "ADM3": 69,
+        "ADM4": 650
+      },
+      "bounds": [
+        117.069472,
+        -3.570143499999972,
+        119.87536820000003,
+        -0.846891299999925
+      ]
+    },
+    {
+      "slug": "sulawesi-selatan",
+      "name": "Sulawesi Selatan",
+      "files": {
+        "ADM1": "sulawesi-selatan/ADM1.geojson.gz",
+        "ADM2": "sulawesi-selatan/ADM2.geojson.gz",
+        "ADM3": "sulawesi-selatan/ADM3.geojson.gz",
+        "ADM4": "sulawesi-selatan/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 24,
+        "ADM3": 309,
+        "ADM4": 3058
+      },
+      "bounds": [
+        117.03848290000008,
+        -7.591171199999962,
+        121.84021040000005,
+        -1.895235599999978
+      ]
+    },
+    {
+      "slug": "sulawesi-tengah",
+      "name": "Sulawesi Tengah",
+      "files": {
+        "ADM1": "sulawesi-tengah/ADM1.geojson.gz",
+        "ADM2": "sulawesi-tengah/ADM2.geojson.gz",
+        "ADM3": "sulawesi-tengah/ADM3.geojson.gz",
+        "ADM4": "sulawesi-tengah/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 13,
+        "ADM3": 176,
+        "ADM4": 2024
+      },
+      "bounds": [
+        119.44755530000009,
+        -3.640743599999951,
+        124.18152980000002,
+        1.375153500000067
+      ]
+    },
+    {
+      "slug": "sulawesi-tenggara",
+      "name": "Sulawesi Tenggara",
+      "files": {
+        "ADM1": "sulawesi-tenggara/ADM1.geojson.gz",
+        "ADM2": "sulawesi-tenggara/ADM2.geojson.gz",
+        "ADM3": "sulawesi-tenggara/ADM3.geojson.gz",
+        "ADM4": "sulawesi-tenggara/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 17,
+        "ADM3": 222,
+        "ADM4": 2338
+      },
+      "bounds": [
+        120.86472440000011,
+        -6.213087,
+        124.6122448000001,
+        -2.779408399999966
+      ]
+    },
+    {
+      "slug": "sulawesi-utara",
+      "name": "Sulawesi Utara",
+      "files": {
+        "ADM1": "sulawesi-utara/ADM1.geojson.gz",
+        "ADM2": "sulawesi-utara/ADM2.geojson.gz",
+        "ADM3": "sulawesi-utara/ADM3.geojson.gz",
+        "ADM4": "sulawesi-utara/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 16,
+        "ADM3": 172,
+        "ADM4": 1839
+      },
+      "bounds": [
+        123.110851,
+        0.292254400000047,
+        127.16393560000006,
+        5.565693
+      ]
+    },
+    {
+      "slug": "sumatera-barat",
+      "name": "Sumatera Barat",
+      "files": {
+        "ADM1": "sumatera-barat/ADM1.geojson.gz",
+        "ADM2": "sumatera-barat/ADM2.geojson.gz",
+        "ADM3": "sumatera-barat/ADM3.geojson.gz",
+        "ADM4": "sumatera-barat/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 20,
+        "ADM3": 181,
+        "ADM4": 1164
+      },
+      "bounds": [
+        98.59667980000006,
+        -4.016246599999931,
+        101.89291750000007,
+        0.907389200000068
+      ]
+    },
+    {
+      "slug": "sumatera-selatan",
+      "name": "Sumatera Selatan",
+      "files": {
+        "ADM1": "sumatera-selatan/ADM1.geojson.gz",
+        "ADM2": "sumatera-selatan/ADM2.geojson.gz",
+        "ADM3": "sumatera-selatan/ADM3.geojson.gz",
+        "ADM4": "sumatera-selatan/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 18,
+        "ADM3": 237,
+        "ADM4": 3264
+      },
+      "bounds": [
+        102.06802240000007,
+        -4.925351699999965,
+        106.18879510000005,
+        -1.625441199999955
+      ]
+    },
+    {
+      "slug": "sumatera-utara",
+      "name": "Sumatera Utara",
+      "files": {
+        "ADM1": "sumatera-utara/ADM1.geojson.gz",
+        "ADM2": "sumatera-utara/ADM2.geojson.gz",
+        "ADM3": "sumatera-utara/ADM3.geojson.gz",
+        "ADM4": "sumatera-utara/ADM4.geojson.gz"
+      },
+      "counts": {
+        "ADM1": 1,
+        "ADM2": 34,
+        "ADM3": 450,
+        "ADM4": 6122
+      },
+      "bounds": [
+        97.059082,
+        -0.638760499999933,
+        100.42578150000008,
+        4.301491800000065
+      ]
+    }
+  ],
+  "overview_files": {
+    "ADM1": "overview/ADM1.geojson.gz"
+  }
+}
