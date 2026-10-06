@@ -1,7 +1,0 @@
-Indonesia administrative boundaries (2019)
-Source: geoBoundaries gbHumanitarian; OCHA Regional Office for Asia and the Pacific (ROAP), HDX COD-AB.
-Dataset: https://data.humdata.org/dataset/cod-ab-idn
-License: Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO).
-License text: https://creativecommons.org/licenses/by/3.0/igo/legalcode
-ADM1 province; ADM2 regency/city; ADM3 subdistrict; ADM4 village/urban village.
-Features split by province. Geometries simplified for web display (0.0005 degree tolerance); ADM2-ADM4 parent names assigned by representative-point containment of simplified geometries. Verify against authoritative current data before official use.
