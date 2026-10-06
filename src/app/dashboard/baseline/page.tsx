@@ -67,27 +67,13 @@ type MapPoint = {
 type BoundaryProperties = Record<string, unknown>;
 type BoundaryFeature = {
   properties?: BoundaryProperties;
-  geometry?: {
-    type: "MultiLineString";
-    coordinates: number[][][];
-  };
+  geometry?:
+    | { type: "Polygon"; coordinates: number[][][] }
+    | { type: "MultiPolygon"; coordinates: number[][][][] };
 };
 type BoundaryCollection = {
   type: "FeatureCollection";
   features: BoundaryFeature[];
-  timestamp?: string;
-};
-type OverpassElement = {
-  type: string;
-  tags?: Record<string, string>;
-  members?: Array<{
-    role?: string;
-    geometry?: Array<{ lat: number; lon: number }>;
-  }>;
-};
-type OverpassResponse = {
-  elements?: OverpassElement[];
-  osm3s?: { timestamp_osm_base?: string };
 };
 type Dashboard = {
   total: number;
@@ -258,34 +244,22 @@ const normalizeDistrict = (value: string) =>
 const normalizeBoundaryName = (value: string) =>
   value
     .toLowerCase()
-    .replace(/^\d+(?:\s*\.\s*\d+)*(?:\s*[.\-)]\s*)?/, "")
+    .replace(/^\d+(?:\s*\.\s*\d+)*\s*[.\-)]\s*/, "")
     .replace(
       /^(kabupaten|kab\.?|kota|kecamatan|kec\.?|desa|kelurahan|kel\.?)\s+/i,
       "",
     )
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-const normalizeProvinceName = (value: string) =>
-  normalizeBoundaryName(value).replace(/^d i /, "daerah istimewa ").replace(
-    /^di /,
-    "daerah istimewa ",
-  );
-const escapeOverpassRegex = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const areaNamePattern = (value: string, prefixes: string[]) => {
-  const normalizedName = prefixes.includes("provinsi")
-    ? normalizeProvinceName(value)
-    : normalizeBoundaryName(value);
-  const normalized = escapeOverpassRegex(normalizedName);
-  const optionalPrefixes = prefixes.length
-    ? `(${prefixes.map(escapeOverpassRegex).join("|")} )?`
-    : "";
-  return `^${optionalPrefixes}${normalized}$`;
+const boundaryProvinceSlug = (value: string) => {
+  const normalized = normalizeBoundaryName(value).replace(/^provinsi\s+/, "");
+  const canonical = normalized
+    .replace(/^d i /, "daerah istimewa ")
+    .replace(/^di /, "daerah istimewa ");
+  return canonical.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 };
-const boundaryCache = new Map<
-  string,
-  { expiresAt: number; request: Promise<BoundaryCollection> }
->();
+const boundaryCache = new Map<string, Promise<BoundaryCollection>>();
+const maxCachedBoundaryCollections = 3;
 async function loadMapBoundaries(
   province: string,
   district: string,
@@ -297,117 +271,88 @@ async function loadMapBoundaries(
       "Pilih provinsi terlebih dahulu untuk menampilkan batas terperinci.",
     );
 
-  const query = ['[out:json][timeout:45];'];
-  let parentArea = "";
-  const addArea = (
-    name: string,
-    level: string,
-    variable: string,
-    prefixes: string[],
-  ) => {
-    const parentFilter = parentArea ? `(area.${parentArea})` : "";
-    query.push(
-      `area${parentFilter}["boundary"="administrative"]["admin_level"="${level}"]["name"~"${areaNamePattern(name, prefixes)}",i]->.${variable};`,
-    );
-    parentArea = variable;
-  };
-
-  // OSM uses Indonesia's admin levels: province 4, regency/city 5,
-  // subdistrict 6, and village 7.
-  if (province) addArea(province, "4", "province", ["provinsi"]);
-  if (district)
-    addArea(district, "5", "district", ["kabupaten", "kab", "kota"]);
-  if (subdistrict)
-    addArea(subdistrict, "6", "subdistrict", ["kecamatan", "kec"]);
-
-  const level = !province ? "4" : !district ? "5" : !subdistrict ? "6" : "7";
-  if (parentArea) {
-    query.push(
-      `relation(area.${parentArea})["boundary"="administrative"]["admin_level"="${level}"];out geom;`,
-    );
+  const level = !province
+    ? "ADM1"
+    : village || subdistrict
+      ? "ADM4"
+      : district
+        ? "ADM3"
+        : "ADM2";
+  const path = province
+    ? `/data/baseline-boundaries/${boundaryProvinceSlug(province)}/${level}.geojson.gz`
+    : `/data/baseline-boundaries/overview/ADM1.geojson.gz`;
+  let request = boundaryCache.get(path);
+  if (request) {
+    boundaryCache.delete(path);
+    boundaryCache.set(path, request);
   } else {
-    query.push(
-      `relation["boundary"="administrative"]["admin_level"="${level}"](-11.5,94.5,6.5,142.5);out geom;`,
-    );
-  }
-
-  const queryText = query.join("");
-  const cached = boundaryCache.get(queryText);
-  if (cached && cached.expiresAt > Date.now()) return cached.request;
-
-  for (const [key, entry] of boundaryCache) {
-    if (entry.expiresAt <= Date.now()) boundaryCache.delete(key);
-  }
-  const request = (async () => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 60_000);
-    try {
-      const response = await fetch(
-        `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(queryText)}`,
-        { signal: controller.signal },
-      );
+    request = (async () => {
+      const response = await fetch(path);
+      if (response.status === 404)
+        throw new Error(
+          "Batas untuk provinsi ini belum tersedia di COD-AB HDX (cakupan 34 provinsi).",
+        );
       if (!response.ok)
         throw new Error(
-          `Layanan batas OpenStreetMap gagal (${response.status}). Coba lagi beberapa saat.`,
+          `Data batas wilayah gagal dimuat (${response.status}).`,
         );
-      const result = (await response.json()) as OverpassResponse;
-      if (!Array.isArray(result.elements))
-        throw new Error("Respons batas OpenStreetMap tidak valid.");
-
-      const selectedVillage = normalizeBoundaryName(village);
-      const features = result.elements.flatMap((element) => {
-        if (element.type !== "relation" || !element.tags?.name) return [];
-        if (
-          selectedVillage &&
-          normalizeBoundaryName(element.tags.name) !== selectedVillage
-        )
-          return [];
-        const lines = (element.members ?? []).flatMap((member) => {
-          if (
-            (member.role && member.role !== "outer") ||
-            !member.geometry ||
-            member.geometry.length < 2
-          )
-            return [];
-          return [member.geometry.map(({ lon, lat }) => [lon, lat])];
-        });
-        if (!lines.length) return [];
-        return [
-          {
-            type: "Feature" as const,
-            properties: {
-              name: element.tags.name,
-              admin_level: element.tags.admin_level,
-            },
-            geometry: {
-              type: "MultiLineString" as const,
-              coordinates: lines,
-            },
-          },
-        ];
-      });
-      return {
-        type: "FeatureCollection" as const,
-        features,
-        timestamp: result.osm3s?.timestamp_osm_base,
-      };
-    } catch (cause) {
-      if (cause instanceof Error && cause.name === "AbortError")
-        throw new Error("Permintaan batas wilayah OpenStreetMap terlalu lama.");
-      throw cause;
-    } finally {
-      window.clearTimeout(timeout);
+      if (!response.body)
+        throw new Error(
+          "Browser tidak mendukung pembacaan data batas wilayah.",
+        );
+      let collection: BoundaryCollection;
+      try {
+        collection = (await new Response(
+          response.body.pipeThrough(new DecompressionStream("gzip")),
+        ).json()) as BoundaryCollection;
+      } catch {
+        throw new Error("Data batas wilayah HDX tidak dapat dibaca.");
+      }
+      if (
+        collection.type !== "FeatureCollection" ||
+        !Array.isArray(collection.features)
+      )
+        throw new Error("Format data batas wilayah HDX tidak valid.");
+      return collection;
+    })();
+    boundaryCache.set(path, request);
+    while (boundaryCache.size > maxCachedBoundaryCollections) {
+      const oldestPath = boundaryCache.keys().next().value;
+      if (oldestPath === undefined) break;
+      boundaryCache.delete(oldestPath);
     }
-  })();
-  boundaryCache.set(queryText, {
-    expiresAt: Date.now() + 10 * 60_000,
-    request,
+    void request.catch(() => {
+      if (boundaryCache.get(path) === request) boundaryCache.delete(path);
+    });
+  }
+
+  const collection = await request;
+  const selectedDistrict = normalizeBoundaryName(district);
+  const selectedSubdistrict = normalizeBoundaryName(subdistrict);
+  const selectedVillage = normalizeBoundaryName(village);
+  const features = collection.features.filter((feature) => {
+    const properties = feature.properties ?? {};
+    if (
+      selectedDistrict &&
+      normalizeBoundaryName(String(properties.adm2_name ?? "")) !==
+        selectedDistrict
+    )
+      return false;
+    if (
+      selectedSubdistrict &&
+      normalizeBoundaryName(String(properties.adm3_name ?? "")) !==
+        selectedSubdistrict
+    )
+      return false;
+    if (
+      selectedVillage &&
+      normalizeBoundaryName(String(properties.adm4_name ?? "")) !==
+        selectedVillage
+    )
+      return false;
+    return true;
   });
-  void request.catch(() => {
-    if (boundaryCache.get(queryText)?.request === request)
-      boundaryCache.delete(queryText);
-  });
-  return request;
+  return { type: "FeatureCollection", features };
 }
 const escapeHtml = (value: string) =>
   value.replace(
@@ -2478,7 +2423,17 @@ async function downloadChart(
   });
   saveChartFile(image, chartFileName(title, format));
 }
-function DownloadChartButton({ title }: { title: string }) {
+function DownloadChartButton({
+  title,
+  onDownloadGeoJSON,
+  disabled = false,
+  geoJSONDisabled = false,
+}: {
+  title: string;
+  onDownloadGeoJSON?: () => void;
+  disabled?: boolean;
+  geoJSONDisabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const save = async (button: HTMLButtonElement, format: ChartFormat) => {
@@ -2490,15 +2445,20 @@ function DownloadChartButton({ title }: { title: string }) {
       setOpen(false);
     }
   };
+  const saveGeoJSON = () => {
+    onDownloadGeoJSON?.();
+    setOpen(false);
+  };
   return (
     <div data-export-control="true" className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        disabled={disabled}
         title={`Unduh ${title}`}
         aria-label={`Unduh ${title}`}
         aria-expanded={open}
-        className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700"
+        className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Download className={`h-4 w-4 ${saving ? "animate-pulse" : ""}`} />
       </button>
@@ -2518,6 +2478,16 @@ function DownloadChartButton({ title }: { title: string }) {
               {format}
             </button>
           ))}
+          {onDownloadGeoJSON && (
+            <button
+              type="button"
+              disabled={saving || disabled || geoJSONDisabled}
+              onClick={saveGeoJSON}
+              className="block w-full px-3 py-2 text-left text-sm font-medium uppercase text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 disabled:opacity-50"
+            >
+              GeoJSON
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -2820,6 +2790,10 @@ function DataLoadingOverlay() {
 type LeafletLayer = {
   addTo: (target: unknown) => LeafletLayer;
   bindPopup: (html: string) => LeafletLayer;
+  bindTooltip: (
+    text: string,
+    options?: { permanent?: boolean; direction?: string; className?: string },
+  ) => LeafletLayer;
 };
 type LeafletBounds = { isValid: () => boolean };
 type LeafletBoundaryLayer = {
@@ -2890,14 +2864,39 @@ function LeafletMap({
     key: "",
     message: "",
     error: "",
+    collection: null as BoundaryCollection | null,
   });
   const boundaryKey = JSON.stringify([province, district, subdistrict, village]);
+  const boundaryLevelName = !province
+    ? "provinsi"
+    : village || subdistrict
+      ? "desa/kelurahan"
+      : district
+        ? "kecamatan"
+        : "kabupaten/kota";
   const boundaryMessage =
     boundaryState.key === boundaryKey
       ? boundaryState.message
       : "Memuat batas wilayah...";
   const boundaryError =
     boundaryState.key === boundaryKey ? boundaryState.error : "";
+  const downloadableBoundaries =
+    boundaryState.key === boundaryKey ? boundaryState.collection : null;
+  const downloadBoundaries = () => {
+    if (!downloadableBoundaries) return;
+    const contents = JSON.stringify(downloadableBoundaries, null, 2);
+    const url = URL.createObjectURL(
+      new Blob([contents], { type: "application/geo+json" }),
+    );
+    const locationSlug = [province, district, subdistrict, village]
+      .filter(Boolean)
+      .join("-")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    saveChartFile(url, `batas-${locationSlug || "indonesia"}.geojson`);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   useEffect(() => {
     let map: LeafletMapInstance | undefined;
     let canceled = false;
@@ -2911,6 +2910,7 @@ function LeafletMap({
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors",
           maxZoom: 18,
+          crossOrigin: true,
         }).addTo(map);
         const colors: Record<string, string> = {
           Padi: "#10b981",
@@ -2951,6 +2951,7 @@ function LeafletMap({
               key: boundaryKey,
               message: "Tidak ada batas yang cocok dengan filter lokasi.",
               error: "",
+              collection: null,
             });
             return;
           }
@@ -2964,26 +2965,46 @@ function LeafletMap({
             },
             onEachFeature: (feature, layer) => {
               const properties = feature.properties ?? {};
-              const levelLabels: Record<string, string> = {
-                "4": "Provinsi",
-                "5": "Kabupaten/Kota",
-                "6": "Kecamatan",
-                "7": "Desa/Kelurahan",
-              };
-              const popup =
-                typeof properties.name === "string"
-                  ? `<strong>${levelLabels[String(properties.admin_level)] || "Wilayah"}:</strong> ${escapeHtml(properties.name)}`
-                  : "";
-              if (popup) layer.bindPopup(popup);
+              const level = String(properties.admin_level);
+              const name = properties[`adm${level}_name`];
+              if (typeof name === "string") {
+                const popup = [
+                  { level: 4, label: "Desa/Kelurahan" },
+                  { level: 3, label: "Kecamatan" },
+                  { level: 2, label: "Kabupaten/Kota" },
+                  { level: 1, label: "Provinsi" },
+                ]
+                  .filter((item) => item.level <= Number(level))
+                  .flatMap((item) => {
+                    const parentName = properties[`adm${item.level}_name`];
+                    return typeof parentName === "string"
+                      ? [
+                          `<strong>${item.label}:</strong> ${escapeHtml(parentName)}`,
+                        ]
+                      : [];
+                  })
+                  .join("<br/>");
+                layer.bindPopup(popup);
+                if (["3", "4"].includes(level))
+                  layer.bindTooltip(escapeHtml(name), {
+                    permanent: true,
+                    direction: "center",
+                    className: "baseline-boundary-label",
+                  });
+              }
             },
           }).addTo(map);
           const bounds = boundaryLayer.getBounds();
           if (bounds.isValid())
-            map.fitBounds(bounds, { padding: [28, 28], maxZoom: 11 });
+            map.fitBounds(bounds, {
+              padding: [28, 28],
+              maxZoom: subdistrict ? 14 : 11,
+            });
           setBoundaryState({
             key: boundaryKey,
-            message: `${number(boundaries.features.length)} batas OpenStreetMap ditampilkan${boundaries.timestamp ? ` · data ${new Date(boundaries.timestamp).toLocaleString("id-ID")}` : ""}.`,
+            message: `${number(boundaries.features.length)} batas ${boundaryLevelName} dari HDX ditampilkan; geometri berlaku sejak 2020.`,
             error: "",
+            collection: boundaries,
           });
         } catch (cause) {
           if (canceled) return;
@@ -2994,6 +3015,7 @@ function LeafletMap({
               cause instanceof Error
                 ? cause.message
                 : "Batas wilayah gagal dimuat.",
+            collection: null,
           });
         }
       })
@@ -3003,25 +3025,44 @@ function LeafletMap({
           key: boundaryKey,
           message: "",
           error: cause instanceof Error ? cause.message : "Peta gagal dimuat.",
+          collection: null,
         });
       });
     return () => {
       canceled = true;
       map?.remove();
     };
-  }, [points, province, district, subdistrict, village, boundaryKey]);
+  }, [
+    points,
+    province,
+    district,
+    subdistrict,
+    village,
+    boundaryKey,
+    boundaryLevelName,
+  ]);
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm xl:col-span-2">
+    <article
+      data-chart
+      className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm xl:col-span-2"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 p-5">
         <div>
           <SectionTitle
             title="Peta Sebaran Responden"
-            text="Peta GPS dengan batas administrasi OpenStreetMap terkini; klik garis batas atau marker untuk melihat detail."
+            text="Nama kecamatan dan desa ditampilkan saat wilayah dipersempit; klik area batas atau marker untuk detail."
           />
         </div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-          {number(points.length)} titik geotag
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+            {number(points.length)} titik geotag
+          </span>
+          <DownloadChartButton
+            title="Peta Sebaran Responden"
+            onDownloadGeoJSON={downloadBoundaries}
+            geoJSONDisabled={!downloadableBoundaries}
+          />
+        </div>
       </div>
       {(boundaryMessage || boundaryError) && (
         <p
@@ -3046,20 +3087,31 @@ function LeafletMap({
           Kakao
         </span>
         <span className="ml-auto">
-          Sumber GPS: respons Baseline · batas:{" "}
+          Sumber GPS: respons Baseline · peta dasar:{" "}
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"
             rel="noreferrer"
             className="font-medium text-emerald-700 underline"
           >
-            OpenStreetMap contributors (ODbL)
+            OpenStreetMap
+          </a>
+          {" · batas wilayah: "}
+          <a
+            href="https://data.humdata.org/dataset/cod-ab-idn"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-emerald-700 underline"
+          >
+            BPS via HDX/OCHA, CC BY 3.0 IGO
           </a>
         </span>
       </div>
       <p className="px-4 pb-4 text-[11px] text-slate-400">
-        Batas dikelola komunitas dan cakupannya dapat berbeda antarwilayah;
-        bukan referensi hukum atau batas administrasi resmi.
+        Dataset COD-AB ditinjau pada 30 Oktober 2025, tetapi geometri batasnya
+        tercatat berlaku sejak 1 April 2020 dan hanya mencakup 34 provinsi
+        (belum mencakup seluruh pemekaran provinsi saat ini). Data ini bukan
+        penetapan hukum batas administrasi terkini.
       </p>
     </article>
   );

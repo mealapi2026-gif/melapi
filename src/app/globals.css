@@ -101,6 +101,19 @@ body {
   z-index: 0 !important;
 }
 
+.baseline-boundary-label {
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid rgb(4 120 87 / 30%);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 20%);
+  color: #064e3b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
 @media print {
   body {
     background: white;
