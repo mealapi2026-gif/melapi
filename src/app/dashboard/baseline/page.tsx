@@ -2444,6 +2444,8 @@ async function downloadChart(
 ) {
   const chart = button.closest<HTMLElement>("[data-chart]");
   if (!chart) return;
+  const map = chart.querySelector<HTMLElement>("[data-map-export]");
+  const target = map ?? chart;
   const options = {
     backgroundColor: "#ffffff",
     pixelRatio: 2,
@@ -2453,15 +2455,14 @@ async function downloadChart(
       node.getAttribute("data-export-control") !== "true",
   };
   const capture = async () => {
-    const map = chart.querySelector<HTMLElement>(".leaflet-container");
     if (map) await waitForMapTiles(map);
     return format === "png"
-      ? await toPng(chart, options)
+      ? await toPng(target, options)
       : format === "jpg"
-        ? await toJpeg(chart, { ...options, quality: 0.95 })
-        : await toSvg(chart, options);
+        ? await toJpeg(target, { ...options, quality: 0.95 })
+        : await toSvg(target, options);
   };
-  const image = chart.querySelector(".leaflet-container")
+  const image = map
     ? await capture()
     : await withLeafletStylesDisabled(capture);
   saveChartFile(image, chartFileName(title, format));
@@ -3129,7 +3130,11 @@ function LeafletMap({
           {boundaryError || boundaryMessage}
         </p>
       )}
-      <div ref={node} className="h-[370px] w-full bg-slate-100" />
+      <div
+        ref={node}
+        data-map-export
+        className="h-[370px] w-full bg-slate-100"
+      />
       <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 p-4 text-xs text-slate-500">
         <span>
           <i className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
