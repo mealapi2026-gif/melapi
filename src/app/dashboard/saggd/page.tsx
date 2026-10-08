@@ -14,9 +14,11 @@ import {
   Loader2,
   AlertCircle,
   BarChart3,
+  Download,
   Eye,
   X
 } from 'lucide-react';
+import { toJpeg, toPng, toSvg } from 'html-to-image';
 import {
   Bar,
   BarChart,
@@ -130,6 +132,136 @@ type LeafletRuntime = {
   circleMarker: (point: number[], options: object) => LeafletLayer;
 };
 
+type ChartFormat = 'png' | 'jpg' | 'svg';
+
+function saveChartFile(url: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+}
+
+async function waitForMapTiles(map: HTMLElement) {
+  const tiles = Array.from(map.querySelectorAll<HTMLImageElement>('img.leaflet-tile'));
+  if (!tiles.length) throw new Error('Tile peta belum siap untuk diunduh.');
+
+  await Promise.all(tiles.map(async (tile) => {
+    if (!tile.complete) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => finish(new Error('Tile peta belum selesai dimuat.')), 15_000);
+        const finish = (error?: Error) => {
+          window.clearTimeout(timeout);
+          tile.removeEventListener('load', handleLoad);
+          tile.removeEventListener('error', handleError);
+          if (error) reject(error);
+          else resolve();
+        };
+        const handleLoad = () => finish();
+        const handleError = () => finish(new Error('Sebagian tile peta gagal dimuat.'));
+        tile.addEventListener('load', handleLoad, { once: true });
+        tile.addEventListener('error', handleError, { once: true });
+        if (tile.complete) handleLoad();
+      });
+    }
+    if (!tile.naturalWidth) throw new Error('Sebagian tile peta gagal dimuat.');
+    await tile.decode();
+  }));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+async function withLeafletStylesDisabled<T>(callback: () => Promise<T>): Promise<T> {
+  const links = Array.from(document.head.querySelectorAll<HTMLLinkElement>(
+    'link[rel="stylesheet"][href*="leaflet.css"], link[data-saggd-leaflet-css="true"]',
+  ));
+  const originalParents = links.map((link) => ({ link, parent: link.parentNode }));
+  links.forEach((link) => link.remove());
+  try {
+    return await callback();
+  } finally {
+    originalParents.forEach(({ link, parent }) => {
+      if (parent) parent.appendChild(link);
+    });
+  }
+}
+
+async function downloadChart(button: HTMLButtonElement, title: string, format: ChartFormat) {
+  const chart = button.closest<HTMLElement>('[data-chart]');
+  if (!chart) return;
+  const map = chart.querySelector<HTMLElement>('[data-map-export]');
+  const target = map ?? chart;
+  const options = {
+    backgroundColor: '#ffffff',
+    pixelRatio: 2,
+    filter: (node: HTMLElement) =>
+      !node || typeof node.getAttribute !== 'function' || node.getAttribute('data-export-control') !== 'true',
+  };
+  const capture = async () => {
+    if (map) await waitForMapTiles(map);
+    return format === 'png'
+      ? await toPng(target, options)
+      : format === 'jpg'
+        ? await toJpeg(target, { ...options, quality: 0.95 })
+        : await toSvg(target, options);
+  };
+  const image = map ? await capture() : await withLeafletStylesDisabled(capture);
+  const fileName = `${title.toLowerCase().replace(/[^a-z0-9]+/gi, '-')}.${format}`;
+  saveChartFile(image, fileName);
+}
+
+function DownloadChartButton({ title }: { title: string }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async (button: HTMLButtonElement, format: ChartFormat) => {
+    setError('');
+    setSaving(true);
+    try {
+      await downloadChart(button, title, format);
+      setOpen(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Diagram gagal diunduh.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div data-export-control="true" className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          setError('');
+          setOpen((value) => !value);
+        }}
+        title={`Unduh ${title}`}
+        aria-label={`Unduh ${title}`}
+        aria-expanded={open}
+        className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700"
+      >
+        <Download className={`h-4 w-4 ${saving ? 'animate-pulse' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-28 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg">
+          <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Unduh</p>
+          {(['png', 'jpg', 'svg'] as ChartFormat[]).map((format) => (
+            <button
+              key={format}
+              type="button"
+              disabled={saving}
+              onClick={(event) => void save(event.currentTarget, format)}
+              className="block w-full px-3 py-2 text-sm font-medium uppercase text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 disabled:opacity-50"
+            >
+              {format}
+            </button>
+          ))}
+          {error && <p role="alert" className="px-3 py-2 text-xs text-rose-700">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function loadLeaflet(): Promise<LeafletRuntime> {
   return new Promise((resolve, reject) => {
     const current = (window as unknown as { L?: LeafletRuntime }).L;
@@ -152,8 +284,11 @@ function loadLeaflet(): Promise<LeafletRuntime> {
 
 function ChartPanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] h-[360px]">
-      <h2 className="text-sm font-bold text-slate-800 mb-3">{title}</h2>
+    <section data-chart className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] h-[360px]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <h2 className="text-sm font-bold text-slate-800">{title}</h2>
+        <DownloadChartButton title={title} />
+      </div>
       <div className="h-[295px] w-full">{children}</div>
     </section>
   );
@@ -664,7 +799,7 @@ function SaggdMap({ points }: { points: ActivityItem[] }) {
       if (canceled || !node.current) return;
       map = L.map(node.current).setView([-2.5, 118], 4);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors', maxZoom: 18, crossOrigin: true,
       }).addTo(map);
       const valid = points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
       valid.forEach((point) => L.circleMarker([point.lat as number, point.lng as number], {
@@ -677,12 +812,15 @@ function SaggdMap({ points }: { points: ActivityItem[] }) {
 
   const pointCount = points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)).length;
   return (
-    <section className="bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] overflow-hidden lg:col-span-2">
+    <section data-chart className="bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] overflow-hidden lg:col-span-2">
       <div className="p-5 flex items-start justify-between gap-3">
         <div><h2 className="text-sm font-bold text-slate-800">Peta sebaran kegiatan</h2><p className="text-xs text-slate-500 mt-1">Klik marker untuk melihat kegiatan, organisasi, dan lokasi.</p></div>
-        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full whitespace-nowrap">{pointCount} titik GPS</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full whitespace-nowrap">{pointCount} titik GPS</span>
+          <DownloadChartButton title="Peta sebaran kegiatan" />
+        </div>
       </div>
-      <div ref={node} className="h-[380px] w-full bg-slate-100" />
+      <div ref={node} data-map-export className="h-[380px] w-full bg-slate-100" />
     </section>
   );
 }
