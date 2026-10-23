@@ -55,6 +55,7 @@ export default function KinerjaEnumeratorPage() {
   const [enumerators, setEnumerators] = useState<EnumeratorStat[]>([]);
   const [dashboardSummary, setDashboardSummary] = useState<BaselineDashboard>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState('');
   const [selectedEnumerator, setSelectedEnumerator] = useState<EnumeratorStat | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,11 +105,35 @@ export default function KinerjaEnumeratorPage() {
     };
   }, []);
 
+  const districtOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          enumerators
+            .map((item) => item.district.trim())
+            .filter((district) => district && district !== 'Belum ada'),
+        ),
+      ).sort((a, b) => a.localeCompare(b, 'id')),
+    [enumerators],
+  );
+
+  const districtEnumerators = useMemo(
+    () =>
+      selectedDistrict
+        ? enumerators.filter(
+            (item) =>
+              item.district.trim().toLocaleLowerCase('id') ===
+              selectedDistrict.toLocaleLowerCase('id'),
+          )
+        : enumerators,
+    [enumerators, selectedDistrict],
+  );
+
   const filteredEnumerators = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return enumerators;
-    return enumerators.filter((item) => item.name.toLowerCase().includes(query));
-  }, [enumerators, searchTerm]);
+    if (!query) return districtEnumerators;
+    return districtEnumerators.filter((item) => item.name.toLowerCase().includes(query));
+  }, [districtEnumerators, searchTerm]);
 
   const formatMonthLabel = (month: string) => {
     if (!month) return 'Belum ada';
@@ -119,8 +144,11 @@ export default function KinerjaEnumeratorPage() {
   };
 
   const topPerformer = filteredEnumerators[0] ?? null;
-  const totalEntries = enumerators.reduce((sum, item) => sum + item.total, 0);
-  const maxTotal = Math.max(...enumerators.map((item) => item.total), 1);
+  const totalEntries = districtEnumerators.reduce(
+    (sum, item) => sum + item.total,
+    0,
+  );
+  const maxTotal = Math.max(...districtEnumerators.map((item) => item.total), 1);
   const averageLandArea = dashboardSummary.kpis?.averageLandArea ?? 0;
 
   return (
@@ -151,27 +179,52 @@ export default function KinerjaEnumeratorPage() {
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Enumerator aktif" value={enumerators.length.toString()} icon={Users} tone="emerald" />
+        <MetricCard
+          label="Enumerator aktif"
+          value={districtEnumerators.length.toString()}
+          icon={Users}
+          tone="emerald"
+        />
         <MetricCard label="Responden baseline" value={String(totalEntries)} icon={ShieldCheck} tone="amber" />
         <MetricCard label="Tersertifikasi" value={String(0)} icon={TrendingUp} tone="sky" />
         <MetricCard label="Rerata luas" value={String(Math.round((Number(averageLandArea) || 0) * 10) / 10)} icon={Activity} tone="violet" />
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Ranking</p>
             <h2 className="mt-1 text-xl font-black text-slate-900">Performa enumerator</h2>
           </div>
-          <label className="relative block w-full max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Cari nama enumerator"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none ring-0 transition focus:border-emerald-400 focus:bg-white"
-            />
-          </label>
+          <div className="grid w-full gap-3 sm:grid-cols-2 md:max-w-2xl">
+            <label className="grid gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+              Kabupaten
+              <select
+                value={selectedDistrict}
+                onChange={(event) => setSelectedDistrict(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-white"
+              >
+                <option value="">Semua kabupaten</option>
+                {districtOptions.map((district) => (
+                  <option key={district} value={district}>
+                    {district}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="relative block">
+              <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                Cari enumerator
+              </span>
+              <Search className="pointer-events-none absolute left-3 top-[2.35rem] h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Cari nama enumerator"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none ring-0 transition focus:border-emerald-400 focus:bg-white"
+              />
+            </label>
+          </div>
         </div>
 
         {loading ? (
@@ -182,7 +235,7 @@ export default function KinerjaEnumeratorPage() {
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
             {filteredEnumerators.length === 0 && (
               <div className="col-span-full rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                Tidak ada enumerator yang sesuai dengan pencarian.
+                Tidak ada enumerator yang sesuai dengan filter.
               </div>
             )}
 
@@ -366,14 +419,26 @@ export default function KinerjaEnumeratorPage() {
         />
         <InsightCard
           title="Rata-rata responden"
-          value={enumerators.length ? (Math.round((totalEntries / enumerators.length) * 10) / 10).toString() : '0'}
+          value={
+            districtEnumerators.length
+              ? (
+                  Math.round(
+                    (totalEntries / districtEnumerators.length) * 10,
+                  ) / 10
+                ).toString()
+              : '0'
+          }
           detail="per enumerator"
           icon={CheckCircle2}
         />
         <InsightCard
           title="Kondisi tim"
-          value={enumerators.length > 0 ? 'Aktif' : 'Menunggu'}
-          detail={enumerators.length > 0 ? 'Semua enumerator baseline sudah terpantau' : 'Belum ada aktivitas input'}
+          value={districtEnumerators.length > 0 ? 'Aktif' : 'Menunggu'}
+          detail={
+            districtEnumerators.length > 0
+              ? 'Semua enumerator baseline sudah terpantau'
+              : 'Belum ada aktivitas input'
+          }
           icon={ShieldCheck}
         />
       </section>
