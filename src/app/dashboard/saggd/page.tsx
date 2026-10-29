@@ -84,7 +84,10 @@ interface ApiResponse {
 }
 
 const normalize = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
-const shortLabel = (value: string, max = 22) => value.length > max ? `${value.slice(0, max)}...` : value;
+const cleanDisplayLabel = (value: string) => value
+  .replace(/^\s*\d+(?:\.\d+)*\.?\s*/, '')
+  .replace(/\s+/g, ' ')
+  .trim();
 const driveFileId = (value: string) => {
   const fileMatch = value.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   const queryMatch = value.match(/[?&]id=([a-zA-Z0-9_-]+)/);
@@ -295,14 +298,48 @@ function ChartPanel({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+function wrapChartLabel(value: string, maxLength = 34) {
+  const words = cleanDisplayLabel(value).split(' ');
+  const lines: string[] = [];
+  let line = '';
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && candidate.length > maxLength) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+function ChartCategoryTick({ x = 0, y = 0, payload }: { x?: number; y?: number; payload?: { value?: string } }) {
+  const lines = wrapChartLabel(String(payload?.value || ''));
+  return (
+    <g transform={`translate(${x - 226},${y})`}>
+      <text textAnchor="start" fill="#64748b" fontSize={9}>
+        {lines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={0} dy={index === 0 ? 0 : 11}>{line}</tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
+
 function ActivityBreakdownChart({
   title,
   data,
   colors,
+  valueLabel = 'Kegiatan',
+  formatValue = (value: number) => String(value),
 }: {
   title: string;
   data: Array<{ name: string; total: number }>;
   colors: string[];
+  valueLabel?: string;
+  formatValue?: (value: number) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const visibleData = expanded ? data : data.slice(0, 8);
@@ -332,16 +369,16 @@ function ActivityBreakdownChart({
       </div>
       <div style={{ height: chartHeight }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={visibleData} layout="vertical" margin={{ left: 22, right: 34 }}>
+          <BarChart data={visibleData} layout="vertical" margin={{ left: 4, right: valueLabel === 'Pembiayaan' ? 86 : 34 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" allowDecimals={false} />
-            <YAxis type="category" dataKey="name" width={120} tickFormatter={(value) => shortLabel(value, 18)} tick={{ fontSize: 10 }} />
+            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+            <YAxis type="category" dataKey="name" width={230} tick={<ChartCategoryTick />} />
             <Tooltip />
-            <Bar dataKey="total" name="Kegiatan" radius={[0, 5, 5, 0]}>
+            <Bar dataKey="total" name={valueLabel} radius={[0, 5, 5, 0]}>
               {visibleData.map((item, index) => (
                 <Cell key={`${item.name}-${index}`} fill={colors[index % colors.length]} />
               ))}
-              <LabelList dataKey="total" position="right" fill="#334155" fontSize={11} fontWeight={700} />
+              <LabelList dataKey="total" position="right" fill="#334155" fontSize={9} fontWeight={700} formatter={(value) => formatValue(Number(value))} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -422,14 +459,14 @@ export default function SaggdDashboard() {
 
   const activityChart = Object.values(filteredTable.reduce<Record<string, { name: string; total: number }>>((groups, item) => {
     const key = normalize(item.jenisKegiatan) || 'tidak diisi';
-    groups[key] = groups[key] || { name: item.jenisKegiatan || 'Tidak diisi', total: 0 };
+    groups[key] = groups[key] || { name: cleanDisplayLabel(item.jenisKegiatan) || 'Tidak diisi', total: 0 };
     groups[key].total += 1;
     return groups;
   }, {})).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'id'));
 
   const organizationChart = Object.values(filteredTable.reduce<Record<string, { name: string; total: number }>>((groups, item) => {
     const key = normalize(item.organisasi) || 'tidak diisi';
-    groups[key] = groups[key] || { name: item.organisasi || 'Tidak diisi', total: 0 };
+    groups[key] = groups[key] || { name: cleanDisplayLabel(item.organisasi) || 'Tidak diisi', total: 0 };
     groups[key].total += 1;
     return groups;
   }, {})).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'id'));
@@ -443,10 +480,10 @@ export default function SaggdDashboard() {
 
   const fundingChart = Object.values(filteredTable.reduce<Record<string, { name: string; total: number }>>((groups, item) => {
     const key = normalize(item.jenisKegiatan) || 'tidak diisi';
-    groups[key] = groups[key] || { name: item.jenisKegiatan || 'Tidak diisi', total: 0 };
+    groups[key] = groups[key] || { name: cleanDisplayLabel(item.jenisKegiatan) || 'Tidak diisi', total: 0 };
     groups[key].total += item.totalPembiayaanItem || 0;
     return groups;
-  }, {})).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, {})).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'id'));
 
   const activityOptions = data?.filterOptions?.kegiatan || Array.from(new Map(data?.table.map((item) => [normalize(item.jenisKegiatan), item.jenisKegiatan]) || []).values()).sort();
   const organizationOptions = data?.filterOptions?.organisasi || Array.from(new Map(data?.table.map((item) => [normalize(item.organisasi), item.organisasi]) || []).values()).sort();
@@ -546,14 +583,14 @@ export default function SaggdDashboard() {
           Jenis kegiatan
           <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)} className="mt-2 w-full">
             <option value="">Semua kegiatan</option>
-            {activityOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            {activityOptions.map((option) => <option key={option} value={option}>{cleanDisplayLabel(option)}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-500">
           Nama organisasi
           <select value={organizationFilter} onChange={(e) => setOrganizationFilter(e.target.value)} className="mt-2 w-full">
             <option value="">Semua organisasi</option>
-            {organizationOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            {organizationOptions.map((option) => <option key={option} value={option}>{cleanDisplayLabel(option)}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-500">
@@ -571,11 +608,36 @@ export default function SaggdDashboard() {
         <ActivityBreakdownChart title="Jumlah kegiatan per jenis" data={activityChart} colors={['#059669', '#0d9488', '#14b8a6', '#22c55e', '#65a30d', '#84cc16', '#10b981', '#16a34a']} />
         <ActivityBreakdownChart title="Jumlah kegiatan per organisasi" data={organizationChart} colors={['#2563eb', '#4f46e5', '#7c3aed', '#9333ea', '#c026d3', '#db2777', '#e11d48', '#f97316']} />
         <ChartPanel title="Komposisi peserta berdasarkan gender dan usia">
-          <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={participantChart} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={88} label={({ name, percent }) => `${shortLabel(String(name || ''), 12)} ${((percent || 0) * 100).toFixed(0)}%`}><Cell fill="#059669" /><Cell fill="#34d399" /><Cell fill="#2563eb" /><Cell fill="#60a5fa" /></Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={participantChart}
+                dataKey="total"
+                nameKey="name"
+                cx="50%"
+                cy="45%"
+                outerRadius={76}
+                label={({ name, value, percent, x, y, textAnchor, fill }) => (
+                  <text x={x} y={y} textAnchor={textAnchor} fill={fill} fontSize={10}>
+                    {`${String(name || '')}: ${value} (${((percent || 0) * 100).toFixed(0)}%)`}
+                  </text>
+                )}
+                labelLine={{ strokeWidth: 1 }}
+              >
+                <Cell fill="#059669" /><Cell fill="#f97316" /><Cell fill="#2563eb" /><Cell fill="#c026d3" />
+              </Pie>
+              <Tooltip formatter={(value) => `${Number(value).toLocaleString('id-ID')} orang`} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
         </ChartPanel>
-        <ChartPanel title="Total pembiayaan per jenis kegiatan">
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={fundingChart} margin={{ left: 12, right: 12 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tickFormatter={(value) => shortLabel(value, 13)} tick={{ fontSize: 10 }} /><YAxis tickFormatter={(value) => `Rp${(value / 1000000).toFixed(0)}M`} tick={{ fontSize: 10 }} /><Tooltip formatter={(value) => formatIDR(Number(value))} /><Bar dataKey="total" name="Pembiayaan" fill="#d97706" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer>
-        </ChartPanel>
+        <ActivityBreakdownChart
+          title="Total pembiayaan per jenis kegiatan"
+          data={fundingChart}
+          valueLabel="Pembiayaan"
+          formatValue={formatIDR}
+          colors={['#d97706', '#ea580c', '#dc2626', '#b91c1c', '#a16207', '#ca8a04', '#be123c', '#9f1239']}
+        />
       </div>
 
       {/* Table Section */}
@@ -634,10 +696,10 @@ export default function SaggdDashboard() {
                   return (
                     <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
                       <td className="py-4 px-6">
-                        <p className="font-bold text-slate-800 text-sm mb-0.5">{row.jenisKegiatan}</p>
+                        <p className="font-bold text-slate-800 text-sm mb-0.5">{cleanDisplayLabel(row.jenisKegiatan)}</p>
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-semibold">
-                            {row.organisasi}
+                            {cleanDisplayLabel(row.organisasi)}
                           </span>
                           {row.komoditas && row.komoditas !== '-' && (
                             <span className="text-[10px] text-slate-400">• {row.komoditas}</span>
@@ -720,14 +782,14 @@ function ActivityDetailModal({
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white p-6">
           <div>
-            <h2 id="activity-detail-title" className="text-lg font-bold text-slate-800">{activity.jenisKegiatan}</h2>
+            <h2 id="activity-detail-title" className="text-lg font-bold text-slate-800">{cleanDisplayLabel(activity.jenisKegiatan)}</h2>
             <p className="mt-1 text-xs text-slate-500">Detail laporan kegiatan SAGGD</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Tutup detail" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button>
         </div>
         <div className="grid gap-5 p-6 md:grid-cols-2">
           <DetailGroup title="Informasi kegiatan">
-            <DetailRow label="Organisasi" value={activity.organisasi} />
+            <DetailRow label="Organisasi" value={cleanDisplayLabel(activity.organisasi)} />
             <DetailRow label="Pelapor" value={activity.pelapor} />
             <DetailRow label="Lokasi" value={activity.lokasi} />
             <DetailRow label="Tanggal" value={activity.tanggal} />
