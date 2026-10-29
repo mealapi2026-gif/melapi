@@ -25,6 +25,7 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  LabelList,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -294,6 +295,61 @@ function ChartPanel({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+function ActivityBreakdownChart({
+  title,
+  data,
+  colors,
+}: {
+  title: string;
+  data: Array<{ name: string; total: number }>;
+  colors: string[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleData = expanded ? data : data.slice(0, 8);
+  const chartHeight = Math.max(295, visibleData.length * 38);
+
+  return (
+    <section data-chart className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-slate-800">{title}</h2>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Menampilkan {visibleData.length} dari {data.length} kategori
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          {data.length > 8 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              className="rounded-lg px-2 py-1 text-[11px] font-semibold text-blue-600 transition hover:bg-blue-50"
+            >
+              {expanded ? 'Sembunyikan' : 'Tampilkan semua'}
+            </button>
+          )}
+          <DownloadChartButton title={title} />
+        </div>
+      </div>
+      <div style={{ height: chartHeight }} className="w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={visibleData} layout="vertical" margin={{ left: 22, right: 34 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <XAxis type="number" allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={120} tickFormatter={(value) => shortLabel(value, 18)} tick={{ fontSize: 10 }} />
+            <Tooltip />
+            <Bar dataKey="total" name="Kegiatan" radius={[0, 5, 5, 0]}>
+              {visibleData.map((item, index) => (
+                <Cell key={`${item.name}-${index}`} fill={colors[index % colors.length]} />
+              ))}
+              <LabelList dataKey="total" position="right" fill="#334155" fontSize={11} fontWeight={700} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
 export default function SaggdDashboard() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -369,7 +425,7 @@ export default function SaggdDashboard() {
     groups[key] = groups[key] || { name: item.jenisKegiatan || 'Tidak diisi', total: 0 };
     groups[key].total += 1;
     return groups;
-  }, {})).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, {})).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'id'));
 
   const organizationChart = Object.values(filteredTable.reduce<Record<string, { name: string; total: number }>>((groups, item) => {
     const key = normalize(item.organisasi) || 'tidak diisi';
@@ -512,12 +568,8 @@ export default function SaggdDashboard() {
       <SaggdMap points={filteredTable} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ChartPanel title="Jumlah kegiatan per jenis">
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={activityChart} layout="vertical" margin={{ left: 22, right: 12 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={120} tickFormatter={(value) => shortLabel(value, 18)} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="total" name="Kegiatan" fill="#059669" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer>
-        </ChartPanel>
-        <ChartPanel title="Jumlah kegiatan per organisasi">
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={organizationChart} layout="vertical" margin={{ left: 22, right: 12 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={120} tickFormatter={(value) => shortLabel(value, 18)} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="total" name="Kegiatan" fill="#2563eb" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer>
-        </ChartPanel>
+        <ActivityBreakdownChart title="Jumlah kegiatan per jenis" data={activityChart} colors={['#059669', '#0d9488', '#14b8a6', '#22c55e', '#65a30d', '#84cc16', '#10b981', '#16a34a']} />
+        <ActivityBreakdownChart title="Jumlah kegiatan per organisasi" data={organizationChart} colors={['#2563eb', '#4f46e5', '#7c3aed', '#9333ea', '#c026d3', '#db2777', '#e11d48', '#f97316']} />
         <ChartPanel title="Komposisi peserta berdasarkan gender dan usia">
           <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={participantChart} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={88} label={({ name, percent }) => `${shortLabel(String(name || ''), 12)} ${((percent || 0) * 100).toFixed(0)}%`}><Cell fill="#059669" /><Cell fill="#34d399" /><Cell fill="#2563eb" /><Cell fill="#60a5fa" /></Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>
         </ChartPanel>
