@@ -37,6 +37,13 @@ function cellSaggd_(row, index) {
   if (Array.isArray(index)) return index.map(function (item) { return cellSaggd_(row, item); }).filter(function (item) { return item !== ''; }).join('\n');
   return index >= 0 && row[index] != null ? row[index] : '';
 }
+function firstCellSaggd_(row, indexes) {
+  for (var i = 0; i < indexes.length; i++) {
+    var value = cellSaggd_(row, indexes[i]);
+    if (value !== '') return value;
+  }
+  return '';
+}
 function textSaggd_(value, fallback) {
   var text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
   return text || (fallback == null ? '' : fallback);
@@ -49,7 +56,23 @@ function numberSaggd_(value) {
 }
 function dateSaggd_(value) {
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  return textSaggd_(value, 'Tanggal belum diisi');
+  var text = textSaggd_(value, '');
+  if (!text) return 'Tanggal belum diisi';
+  var match = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:\s|$)/);
+  if (match) return match[3] + '-' + ('0' + match[2]).slice(-2) + '-' + ('0' + match[1]).slice(-2);
+  match = text.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})(?:\s|$)/);
+  if (match) return match[1] + '-' + ('0' + match[2]).slice(-2) + '-' + ('0' + match[3]).slice(-2);
+  return text;
+}
+function dateSaggdTime_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) return value.getTime();
+  var text = textSaggd_(value, '');
+  var match = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:\s|$)/);
+  if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])).getTime();
+  match = text.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})(?:\s|$)/);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  var parsed = Date.parse(text);
+  return isNaN(parsed) ? 0 : parsed;
 }
 function pointSaggd_(value) {
   var match = String(value || '').match(/\[?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
@@ -72,6 +95,20 @@ function resolveSaggdColumns_(headers) {
     }
     return -1;
   }
+  function findDateColumns(candidates) {
+    var matches = [];
+    candidates.forEach(function (candidate) {
+      var target = normSaggd_(candidate);
+      normalized.forEach(function (header, index) {
+        if (header === target && matches.indexOf(index) === -1) matches.push(index);
+      });
+    });
+    if (matches.length) return matches;
+    normalized.forEach(function (header, index) {
+      if (header.indexOf('tanggal') >= 0 && (header.indexOf('pelaksanaan') >= 0 || header.indexOf('kegiatan') >= 0)) matches.push(index);
+    });
+    return matches;
+  }
   function findAll(candidates) {
     var matches = [];
     candidates.forEach(function (candidate) {
@@ -81,9 +118,9 @@ function resolveSaggdColumns_(headers) {
     return matches;
   }
   return {
-    lokasiProgram: find(['_1_Lokasi_Program']), organisasi: find(['_2_Nama_Organisasi']), komoditas: find(['_3_Komoditas']),
+    lokasiProgram: find(['_1_Lokasi_Program']), organisasi: find(['_2_Nama_Organisasi', '_2_Nama_Organiasi']), komoditas: find(['_3_Komoditas']),
     kegiatan: find(['4. Nama/Jenis Kegiatan']), kegiatanLain: find(['_4_17_Kegiatan_Lainnya', 'Kegiatan_Lainya']),
-    pelapor: find(['_5_Dilaporkan_Oleh']), tanggal: find(['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan']), lokasi: find(['_7_Lokasi']), durasi: find(['_8_Durasi']),
+    pelapor: find(['_5_Dilaporkan_Oleh']), tanggal: findDateColumns(['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan', 'Tanggal Pelaksanaan', 'Tanggal Kegiatan', 'Tanggal']), lokasi: find(['_7_Lokasi']), durasi: find(['_8_Durasi']),
     pemudaLaki: find(['group_rn3xe30/_9_1_Pemuda_Laki_Lak_ia_kurang_dari_35_th', 'group_rn3xe30/_9a_Pemuda_Laki2_35_th']),
     pemudaPerempuan: find(['group_rn3xe30/_9_2_Pemuda_Perempua_ia_kurang_dari_35_th', 'group_rn3xe30/_9b_Pemuda_Perempuan_35_th']),
     dewasaLaki: find(['group_rn3xe30/_9_3_Laki_Laki_usia_lebih_dari_35_th', 'group_rn3xe30/_9c_Laki_35_th']),
@@ -106,7 +143,7 @@ function getDashboardData() {
   var cols = resolveSaggdColumns_(headers);
   var rows = values.slice(1).filter(function (row) { return row.some(function (value) { return value !== '' && value != null; }); });
   var organizations = {}, activities = {}, districts = {}, totalPeserta = 0, totalPembiayaan = 0;
-  var table = rows.slice().reverse().map(function (row) {
+  var table = rows.map(function (row) {
     var kegiatan = textSaggd_(cellSaggd_(row, cols.kegiatan));
     if (/lainnya|lainya|4\.16/i.test(kegiatan)) kegiatan = textSaggd_(cellSaggd_(row, cols.kegiatanLain), 'Kegiatan lainnya');
     var organisasi = textSaggd_(cellSaggd_(row, cols.organisasi), '-');
@@ -116,9 +153,10 @@ function getDashboardData() {
     totalPeserta += numberSaggd_(peserta.pemudaLaki) + numberSaggd_(peserta.pemudaPr) + numberSaggd_(peserta.dewasaLaki) + numberSaggd_(peserta.dewasaPr);
     totalPembiayaan += aktual + swadaya;
     organizations[organisasi.toLowerCase()] = organisasi; activities[kegiatan.toLowerCase()] = kegiatan; if (kabupaten !== '-') districts[kabupaten.toLowerCase()] = kabupaten;
+    var tanggalValue = firstCellSaggd_(row, cols.tanggal);
     var point = pointSaggd_(cellSaggd_(row, cols.gps));
-    return { lokasi: textSaggd_(cellSaggd_(row, cols.lokasi), textSaggd_(cellSaggd_(row, cols.lokasiProgram), '-')), organisasi: organisasi, kabupaten: kabupaten, komoditas: textSaggd_(cellSaggd_(row, cols.komoditas), '-'), jenisKegiatan: kegiatan, pelapor: textSaggd_(cellSaggd_(row, cols.pelapor), '-'), tanggal: dateSaggd_(cellSaggd_(row, cols.tanggal)), durasi: textSaggd_(cellSaggd_(row, cols.durasi), '-'), peserta: peserta, hasil: textSaggd_(cellSaggd_(row, cols.hasil), '-'), indikator: { produksi: textSaggd_(cellSaggd_(row, cols.produksi), '-'), ekonomi: textSaggd_(cellSaggd_(row, cols.ekonomi), '-'), kapasitas: textSaggd_(cellSaggd_(row, cols.kapasitas), '-'), advokasi: textSaggd_(cellSaggd_(row, cols.advokasi), '-') }, pembiayaanAktual: aktual, biayaSwadaya: swadaya, biayaLembagaLain: 0, totalPembiayaanItem: aktual + swadaya, lembagaLainNama: textSaggd_(cellSaggd_(row, cols.lembagaLain), '-'), fotoAbsensi: photoListSaggd_(cellSaggd_(row, cols.absensi)), fotoKegiatan: photoListSaggd_(cellSaggd_(row, cols.foto)), lat: point.lat, lng: point.lng };
-  });
+    return { lokasi: textSaggd_(cellSaggd_(row, cols.lokasi), textSaggd_(cellSaggd_(row, cols.lokasiProgram), '-')), organisasi: organisasi, kabupaten: kabupaten, komoditas: textSaggd_(cellSaggd_(row, cols.komoditas), '-'), jenisKegiatan: kegiatan, pelapor: textSaggd_(cellSaggd_(row, cols.pelapor), '-'), tanggal: dateSaggd_(tanggalValue), tanggalUrut: dateSaggdTime_(tanggalValue), durasi: textSaggd_(cellSaggd_(row, cols.durasi), '-'), peserta: peserta, hasil: textSaggd_(cellSaggd_(row, cols.hasil), '-'), indikator: { produksi: textSaggd_(cellSaggd_(row, cols.produksi), '-'), ekonomi: textSaggd_(cellSaggd_(row, cols.ekonomi), '-'), kapasitas: textSaggd_(cellSaggd_(row, cols.kapasitas), '-'), advokasi: textSaggd_(cellSaggd_(row, cols.advokasi), '-') }, pembiayaanAktual: aktual, biayaSwadaya: swadaya, biayaLembagaLain: 0, totalPembiayaanItem: aktual + swadaya, lembagaLainNama: textSaggd_(cellSaggd_(row, cols.lembagaLain), '-'), fotoAbsensi: photoListSaggd_(cellSaggd_(row, cols.absensi)), fotoKegiatan: photoListSaggd_(cellSaggd_(row, cols.foto)), lat: point.lat, lng: point.lng };
+  }).sort(function (a, b) { return (b.tanggalUrut || 0) - (a.tanggalUrut || 0); });
   function sortedValues(object) { return Object.keys(object).map(function (key) { return object[key]; }).sort(); }
   return { kpi: { totalKegiatan: rows.length, totalPeserta: totalPeserta, totalPembiayaan: totalPembiayaan, totalOrganisasi: Object.keys(organizations).length }, filterOptions: { kegiatan: sortedValues(activities), organisasi: sortedValues(organizations), kabupaten: sortedValues(districts) }, table: table };
 }

@@ -376,7 +376,7 @@ export default function SaggdDashboard() {
     groups[key] = groups[key] || { name: item.organisasi || 'Tidak diisi', total: 0 };
     groups[key].total += 1;
     return groups;
-  }, {})).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, {})).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'id'));
 
   const participantChart = [
     { name: 'Pemuda laki-laki', total: filteredTable.reduce((sum, item) => sum + (parseInt(item.peserta.pemudaLaki, 10) || 0), 0) },

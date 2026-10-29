@@ -1,5 +1,5 @@
 var SAGGD_KOBO_CONFIG = {
-  token: '2314bc793b14bb76cc7ee2ae1eab1a750d557a97',
+  token: '',
   assetUid: 'a7vNjseoAicBntatMQVdfC',
   sheetName: 'SAGGD',
   headerSheetName: 'SAGGD_Header_Kobo',
@@ -11,7 +11,8 @@ var SAGGD_KOBO_CONFIG = {
 // kolom yang sama. Key pertama adalah header lama di Sheet; nilai berikutnya
 // adalah key submission Kobo yang ekuivalen.
 var SAGGD_HEADER_ALIASES = {
-  '_2_Nama_Organisasi': ['_2_Nama_Organisasi'],
+  '_2_Nama_Organisasi': ['_2_Nama_Organisasi', '_2_Nama_Organiasi'],
+  '_2_Nama_Organiasi': ['_2_Nama_Organisasi', '_2_Nama_Organiasi'],
   '_6_Tanggal_Pelaksanan': ['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan'],
   '_6_Tanggal_Pelaksanaan': ['_6_Tanggal_Pelaksanaan', '_6_Tanggal_Pelaksanan'],
   'group_rn3xe30/_9a_Pemuda_Laki2_35_th': ['group_rn3xe30/_9_1_Pemuda_Laki_Lak_ia_kurang_dari_35_th', 'group_rn3xe30/_9a_Pemuda_Laki2_35_th'],
@@ -32,7 +33,11 @@ var SAGGD_HEADER_ALIASES = {
 };
 
 function getSaggdKoboToken_() {
-  return PropertiesService.getScriptProperties().getProperty('SAGGD_KOBO_TOKEN') || SAGGD_KOBO_CONFIG.token;
+  var token = PropertiesService.getScriptProperties().getProperty('SAGGD_KOBO_TOKEN') || SAGGD_KOBO_CONFIG.token;
+  if (!token || String(token).trim().length < 20) {
+    throw new Error('Token Kobo belum dikonfigurasi. Simpan token pada Script Properties dengan nama SAGGD_KOBO_TOKEN.');
+  }
+  return String(token).trim();
 }
 
 function setSaggdKoboToken_(token) {
@@ -110,9 +115,10 @@ function formatSaggdKoboValue_(value, choiceMap) {
 // lalu menulisnya ke tab SAGGD_Header_Kobo tanpa mengubah tab data SAGGD.
 function ambilHeaderKoboSaggd() {
   var config = SAGGD_KOBO_CONFIG;
+  var koboToken = getSaggdKoboToken_();
   var options = {
     method: 'get',
-    headers: { Authorization: 'Token ' + config.token },
+    headers: { Authorization: 'Token ' + koboToken },
     muteHttpExceptions: true
   };
   var assetResponse = UrlFetchApp.fetch(config.baseUrl + '/api/v2/assets/' + config.assetUid + '/', options);
@@ -273,6 +279,7 @@ function tarikDataKoboOtomatis() {
   const DRIVE_FOLDER_ID = SAGGD_KOBO_CONFIG.driveFolderId;
   const KOBO_BASE_URL = SAGGD_KOBO_CONFIG.baseUrl;
   const MAX_DATA_PER_RUN = 100;
+  const WRITE_BATCH_SIZE = 10;
 
   // Validasi data sebelum sync (gunakan VALIDATION_UTILITIES.gs)
   // Fungsi validasiDanBersihkanSAGGD() akan deteksi & hapus duplikat header
@@ -437,20 +444,34 @@ function tarikDataKoboOtomatis() {
     return;
   }
 
-  let allNewRows = [];
+  let pendingNewRows = [];
   let updatedRows = [];
   let successCount = 0;
   let failCount = 0;
+
+  function flushNewRows_() {
+    if (pendingNewRows.length === 0) return;
+    const firstRow = sheet.getLastRow() + 1;
+    sheet.getRange(firstRow, 1, pendingNewRows.length, sheetHeaders.length).setValues(pendingNewRows);
+    Logger.log(`  💾 ${pendingNewRows.length} baris baru disimpan ke Sheet.`);
+    pendingNewRows = [];
+  }
 
   for (let i = 0; i < dataYangAkanDiproses.length; i++) {
     try {
       const sub = dataYangAkanDiproses[i];
       const koboId = String(sub._id);
+      const saved = existingRowsById[koboId];
       let rowData = [];
 
       for (let h = 0; h < sheetHeaders.length; h++) {
         const value = submissionValueForHeader_(sub, sheetHeaders[h], labelMap, reverseLabelMap);
         rowData.push(formatSaggdKoboValue_(value, choiceMap));
+      }
+      if (saved) {
+        attendancePhotoIndexes.concat(activityPhotoIndexes).forEach(function (index) {
+          rowData[index] = saved.values[index] || rowData[index];
+        });
       }
 
       const submitDate = new Date(sub._submission_time);
@@ -458,7 +479,7 @@ function tarikDataKoboOtomatis() {
       const namaKegiatan = activityIndexes.map(function (index) { return rowData[index]; }).find(function (value) { return String(value || '').trim() !== ''; }) || 'Kegiatan Tidak Diketahui';
 
       let fileMap = {};
-      if (sub._attachments && sub._attachments.length > 0) {
+      if (!saved && sub._attachments && sub._attachments.length > 0) {
         Logger.log(`  📁 ${koboId}: Download ${sub._attachments.length} file...`);
 
         for (let j = 0; j < sub._attachments.length; j++) {
@@ -527,7 +548,6 @@ function tarikDataKoboOtomatis() {
         }
       }
 
-      const saved = existingRowsById[koboId];
       if (saved) {
         // Isi nilai kosong dari Kobo (misalnya tanggal pelaksanaan) tanpa
         // menghapus data Sheet apabila Kobo memang tidak memiliki nilai.
@@ -536,11 +556,15 @@ function tarikDataKoboOtomatis() {
         });
         updatedRows.push({ rowNumber: saved.rowNumber, values: merged });
       } else {
-        allNewRows.push(rowData);
+        pendingNewRows.push(rowData);
       }
       successCount++;
 
-      if ((i + 1) % 10 === 0) {
+      if (pendingNewRows.length >= WRITE_BATCH_SIZE) {
+        flushNewRows_();
+      }
+
+      if ((i + 1) % WRITE_BATCH_SIZE === 0) {
         Logger.log(`  ✓ ${i + 1}/${dataYangAkanDiproses.length} baris diproses...`);
       }
     } catch (err) {
@@ -552,19 +576,19 @@ function tarikDataKoboOtomatis() {
   updatedRows.forEach(function (item) {
     sheet.getRange(item.rowNumber, 1, 1, item.values.length).setValues([item.values]);
   });
-  if (allNewRows.length > 0) {
-    try {
-      const nextRow = sheet.getLastRow() + 1;
-      sheet.getRange(nextRow, 1, allNewRows.length, allNewRows[0].length).setValues(allNewRows);
-      Logger.log(`\n✅ SELESAI! ${successCount} baris berhasil ditambahkan`);
-      if (failCount > 0) {
-        Logger.log(`⚠️ ${failCount} baris gagal diproses`);
-      }
-    } catch (err) {
-      Logger.log(`❌ Error menulis ke sheet: ${err.message}`);
+  try {
+    flushNewRows_();
+  } catch (err) {
+    Logger.log(`❌ Error menulis batch ke Sheet: ${err.message}`);
+    throw err;
+  }
+  if (successCount > 0) {
+    Logger.log(`\n✅ SELESAI! ${successCount} baris berhasil diproses`);
+    if (failCount > 0) {
+      Logger.log(`⚠️ ${failCount} baris gagal diproses`);
     }
   } else {
-    Logger.log('⚠️ Tidak ada data baru untuk ditulis');
+    Logger.log('⚠️ Tidak ada data yang berhasil diproses');
   }
 }
 
