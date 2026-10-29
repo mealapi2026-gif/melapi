@@ -808,7 +808,7 @@ function ActivityDetailModal({
             </div>
           </DetailGroup>
           <DetailGroup title="Capaian indikator">
-            {indicators.map(([label, value]) => <DetailRow key={label} label={label} value={value || '-'} />)}
+            {indicators.map(([label, value]) => <DetailRow key={label} label={label} value={cleanDisplayLabel(value || '-') || '-'} />)}
           </DetailGroup>
           <div className="md:col-span-2"><DetailGroup title="Hasil kegiatan"><p className="whitespace-pre-line text-sm leading-6 text-slate-600">{activity.hasil || '-'}</p></DetailGroup></div>
           <div className="md:col-span-2"><DetailGroup title="Dokumentasi">
